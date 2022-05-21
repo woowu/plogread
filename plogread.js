@@ -8,8 +8,8 @@ const { SerialPort } = require('serialport');
 const clc = require('cli-color');
 
 const timestampWidth = 10;
-const modWidth = 5;
-const taskWidth = 25;
+const modWidth = 4;
+const taskWidth = 12;
 const facilityNameWidth = 22;
 const facilityNumWidth = 4;
 
