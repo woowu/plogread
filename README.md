@@ -3,7 +3,9 @@ Picasso Log Reader
 
 ## Installation
 
-  1. Install NodeJs in your OS
+  1. Install NodeJs in your OS. For Windows user, please note there is a
+     checkbox "Automatically install the necessary tools." while running the
+     installer, please *make sure it's enabled*.
   2. CD into the root directory of this package.
   3. Run `npm install` to install dependencies.
 
