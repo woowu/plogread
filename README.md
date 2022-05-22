@@ -14,8 +14,7 @@ The following command line read and print the log, in the same time it save all 
   - Linux: `./bin/plogread -d /dev/ttyUSB0 -w log`
   - Windows: `node plogread -d COM3 -w log`
 
-For detail information, run `plogread -h` to get the online help.
+For detail information, run `plogread -h` to get the online help. Below is a
+screenshot when running the above command line:
 
-## Screenshot
-
-<img src="doc/screenshot.png" alt="screenshot" width="600"/>
+<img src="doc/screenshot.png" alt="screenshot" width="500"/>
