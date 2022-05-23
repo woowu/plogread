@@ -9,7 +9,7 @@ Picasso Log Reader
 
 ## Usage
 
-The following command line read and print the log, in the same time it save all the logs to a file.
+The following command line read and print the log and save the logs to a file at the same time:
 
   - Linux: `./bin/plogread -d /dev/ttyUSB0 -w log`
   - Windows: `node plogread -d COM3 -w log`
