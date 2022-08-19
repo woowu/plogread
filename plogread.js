@@ -14,6 +14,7 @@ const facilityNameWidth = 22;
 const facilityNumWidth = 4;
 
 var ws;
+var argv;
 
 const makeLogLineHandler = (handler) => {
     var response = '';
@@ -37,10 +38,11 @@ const makeLogLineHandler = (handler) => {
  * Align and coloring
  */
 const printLog = log => {
-    const ts = clc.green;
-    const m = clc.blue;
-    const t = clc.yellow;
-    const f = clc.blue;
+    const noColor = str => str;
+    const ts = ! argv.color ? noColor : clc.green;
+    const m = ! argv.color ? noColor : clc.blue;
+    const t = ! argv.color ? noColor : clc.yellow;
+    const f = ! argv.color ? noColor : clc.blue;
 
     if (! log) return;
 
@@ -90,7 +92,7 @@ const processLogLine = line => {
     printLog(split(line));
 };
 
-const argv = yargs(hideBin(process.argv))
+argv = yargs(hideBin(process.argv))
     .version('0.1.0-pre.1')
     .option('device', {
         alias: 'd',
@@ -110,6 +112,11 @@ const argv = yargs(hideBin(process.argv))
         describe: 'also write to a file',
         nargs: 1,
         type: 'string',
+    })
+    .option('color', {
+        describe: 'ascii color',
+        type: 'boolean',
+        default: true,
     })
     .help()
     .alias('help', 'h')
