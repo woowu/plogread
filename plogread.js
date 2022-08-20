@@ -19,6 +19,7 @@ var argv;
 const makeLogLineHandler = (handler) => {
     var response = '';
     return serialData => {
+        if (argv.raw) return console.log(serialData.toString());
         response += serialData.toString();
         const scanLines = (remaining, cb) => {
             if (! remaining) return cb('');
@@ -117,6 +118,10 @@ argv = yargs(hideBin(process.argv))
         describe: 'ascii color',
         type: 'boolean',
         default: true,
+    })
+    .option('raw', {
+        describe: 'raw mode',
+        type: 'boolean',
     })
     .help()
     .alias('help', 'h')
