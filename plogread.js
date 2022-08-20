@@ -133,6 +133,7 @@ const device = new SerialPort({
     baudRate: argv.baud,
     autoOpen: false,
 }).on('data', makeLogLineHandler(processLogLine));
+
 if (argv.write) ws = fs.createWriteStream(argv.write);
 device.open(err => {
     if (err) {
@@ -140,4 +141,3 @@ device.open(err => {
         process.exit(1);
     }
 });
-
