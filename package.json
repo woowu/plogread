@@ -12,6 +12,7 @@
   "dependencies": {
     "cli-color": "^2.0.2",
     "serialport": "^10.4.0",
+    "winston": "^3.8.1",
     "yargs": "^17.5.1"
   }
 }

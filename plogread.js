@@ -6,94 +6,18 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const { SerialPort } = require('serialport');
 const clc = require('cli-color');
+const { MESSAGE } = require('triple-beam');
+const jsonStringify = require('safe-stable-stringify');
+const logform = require('logform');
+const winston = require('winston');
 
 const timestampWidth = 10;
 const modWidth = 4;
-const taskWidth = 12;
-const facilityNameWidth = 22;
+const taskWidth = 25;
+const facilityNameWidth = 20;
 const facilityNumWidth = 4;
 
-var ws;
-var argv;
-
-const makeLogLineHandler = (handler) => {
-    var response = '';
-    return serialData => {
-        if (argv.raw) return console.log(serialData.toString());
-        response += serialData.toString();
-        const scanLines = (remaining, cb) => {
-            if (! remaining) return cb('');
-            const pos = remaining.search('\n');
-            if (pos < 0) return cb(remaining);
-            const line = remaining.slice(0, pos);
-            handler(line);
-            scanLines(remaining.slice(pos + 1), cb);
-        };
-        scanLines(response, remained => {
-            response = remained;
-        });
-    };
-};
-
-/**
- * Align and coloring
- */
-const printLog = log => {
-    const noColor = str => str;
-    const ts = ! argv.color ? noColor : clc.green;
-    const m = ! argv.color ? noColor : clc.blue;
-    const t = ! argv.color ? noColor : clc.yellow;
-    const f = ! argv.color ? noColor : clc.blue;
-
-    if (! log) return;
-
-    const alignRight = (str, width) => str.slice(0, width).padStart(width);
-
-    log.timestamp = alignRight(log.timestamp, timestampWidth);
-    log.mod = alignRight(log.mod, modWidth);
-    log.task = alignRight(log.task, taskWidth);
-    log.facility = alignRight(typeof log.facility == 'number'
-        ? '(' + log.facility + ')' : log.facility
-        , typeof log.facility == 'number'
-        ? facilityNumWidth : facilityNameWidth);
-
-    if (ws)
-        ws.write([log.timestamp, log.mod, log.task, log.facility, log.msg]
-            .join(' ') + '\n');
-    console.log(ts(log.timestamp), m(log.mod), t(log.task)
-        , f(log.facility), log.msg);
-};
-
-/**
- * Parse a log line
- */
-const processLogLine = line => {
-    const split = line => {
-        line = line.trim();
-        if (! line) return null;
-        const pos = line.search(':');
-        if (pos < 0) return;
-        line = line.slice(0, pos) + line.slice(pos + 1);
-        const words = line.trim().split(/\s+/);
-        var [ticks, mod, task, facility] = words;
-        const msg = words.slice(4).join(' ');
-        if (msg === undefined) return null; /* an incompleted line */
-        if (isNaN(parseInt(ticks))) return null; /* bad line */
-        const timestamp = ticks
-            ? (ticks / 1000).toFixed(3).slice(0, timestampWidth)
-            : '';
-        mod = mod ? mod : '';
-        task = task ? task : '';
-        if (! isNaN(parseInt(facility)))
-            facility = parseInt(facility);
-        else
-            facility = facility ? facility : '';
-        return { timestamp, mod, task, facility, msg };
-    };
-    printLog(split(line));
-};
-
-argv = yargs(hideBin(process.argv))
+const argv = yargs(hideBin(process.argv))
     .version('0.1.0-pre.1')
     .option('device', {
         alias: 'd',
@@ -108,8 +32,8 @@ argv = yargs(hideBin(process.argv))
         type: 'number',
         default: 921600,
     })
-    .option('write', {
-        alias: 'w',
+    .option('file', {
+        alias: 'f',
         describe: 'also write to a file',
         nargs: 1,
         type: 'string',
@@ -128,13 +52,131 @@ argv = yargs(hideBin(process.argv))
     .alias('version', 'v')
     .argv;
 
+const logFormat = logform.format((info, opts) => {
+    /* a message is a log line, split it into an object with fields */
+    const split = message => {
+        message = message.trim();
+        if (! message) return null;
+        const pos = message.search(':');
+        if (pos < 0) return;
+        message = message.slice(0, pos) + message.slice(pos + 1);
+        const words = message.trim().split(/\s+/);
+        var [ticks, mod, task, facility] = words;
+        const msg = words.slice(4).join(' ');
+        if (msg === undefined) return null; /* an incompleted message */
+        if (isNaN(parseInt(ticks))) return null; /* bad message */
+        const timestamp = ticks
+            ? (ticks / 1000).toFixed(3).slice(0, timestampWidth)
+            : '';
+        mod = mod ? mod : '';
+        task = task ? task : '';
+        if (! isNaN(parseInt(facility)))
+            facility = parseInt(facility);
+        else
+            facility = facility ? facility : '';
+        return { timestamp, mod, task, facility, msg };
+    };
+
+    /**
+     * padding and coloring
+     */
+    const transformMessage = m => {
+        const noColor = str => str;
+        const ts = ! opts.color ? noColor : clc.green;
+        const md = ! opts.color ? noColor : clc.blue;
+        const t = ! opts.color ? noColor : clc.yellow;
+        const f = ! opts.color ? noColor : clc.blue;
+
+        const alignRight = (str, width) => {
+            return opts.padding ? str.slice(0, width).padStart(width) : str;
+        }
+
+        try {
+            m.timestamp = new Date(parseInt(parseFloat(m.timestamp) * 1000))
+                .toISOString().slice(11, 22);
+        } catch (err) {
+            m.timestamp = '*bad ticks*'
+        }
+        m.mod = alignRight(m.mod, modWidth);
+        m.task = alignRight(m.task, taskWidth);
+        m.facility = alignRight(typeof m.facility == 'number'
+            ? '(' + m.facility + ')' : m.facility
+            , typeof m.facility == 'number'
+            ? facilityNumWidth : facilityNameWidth);
+
+        m.timestamp = ts(m.timestamp);
+        m.mod = md(m.mod);
+        m.task = t(m.task);
+        m.facility = f(m.facility);
+
+        return m;
+    };
+
+    try {
+        const m = transformMessage(split(info.message));
+        info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
+    } catch (error) {
+        info[MESSAGE] = '*bad message*: ' + info.message ;
+    }
+    return info;
+
+    const stringifiedRest = jsonStringify(Object.assign({}, info, {
+        level: undefined,
+        message: undefined,
+        splat: undefined
+    }));
+
+    const padding = info.padding && info.padding[info.level] || '';
+    if (stringifiedRest !== '{}') {
+        info[MESSAGE] = `${info.level}:${padding} ${info.message} ${stringifiedRest}`;
+    } else {
+        info[MESSAGE] = `${info.level}:${padding} ${info.message}`;
+    }
+
+    return info;
+});
+
+const logger = winston.createLogger({
+    level: 'debug',
+    transports: [
+        new winston.transports.Console({
+            format: logFormat({ color: argv.color, padding: true}),
+        }),
+    ],
+});
+if (argv.file)
+    logger.add(new winston.transports.File({
+    filename: argv.file,
+    format: logFormat({ color: false, padding: false}),
+}));
+
+const makeLogLineHandler = (handler) => {
+    var response = '';
+    return serialData => {
+        response += serialData.toString();
+        const scanLines = (remaining, cb) => {
+            if (! remaining) return cb('');
+            const pos = remaining.search('\n');
+            if (pos < 0) return cb(remaining);
+            const line = remaining.slice(0, pos);
+            handler(line);
+            scanLines(remaining.slice(pos + 1), cb);
+        };
+        scanLines(response, remained => {
+            response = remained;
+        });
+    };
+};
+
 const device = new SerialPort({
     path: argv.device,
     baudRate: argv.baud,
     autoOpen: false,
-}).on('data', makeLogLineHandler(processLogLine));
+}).on('data', makeLogLineHandler(line => {
+    if (argv.raw) return console.log(line);
+    logger.info(line);
+}));
 
-if (argv.write) ws = fs.createWriteStream(argv.write);
 device.open(err => {
     if (err) {
         console.error(`Error opening ${argv.device}:`, err.message);
