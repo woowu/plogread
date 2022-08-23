@@ -17,6 +17,8 @@ const taskWidth = 25;
 const facilityNameWidth = 20;
 const facilityNumWidth = 4;
 
+const DEFAULT_LOG_FILE_MAX_SIZE = 10 * 1024;
+
 const argv = yargs(hideBin(process.argv))
     .version('0.1.0-pre.1')
     .option('device', {
@@ -38,6 +40,13 @@ const argv = yargs(hideBin(process.argv))
         nargs: 1,
         type: 'string',
     })
+    .option('max-size', {
+        alias: 's',
+        describe: 'maxsize of each saved log file (in KB)',
+        nargs: 1,
+        type: 'number',
+        default: DEFAULT_LOG_FILE_MAX_SIZE,
+    })
     .option('color', {
         describe: 'ascii color',
         type: 'boolean',
@@ -58,7 +67,7 @@ const logFormat = logform.format((info, opts) => {
         message = message.trim();
         if (! message) return null;
         const pos = message.search(':');
-        if (pos < 0) return;
+        if (pos < 0) return null;
         message = message.slice(0, pos) + message.slice(pos + 1);
         const words = message.trim().split(/\s+/);
         var [ticks, mod, task, facility] = words;
@@ -113,10 +122,15 @@ const logFormat = logform.format((info, opts) => {
     };
 
     try {
-        const m = transformMessage(split(info.message));
-        info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
+        const o = split(info.message);
+        if (! o) {
+            info[MESSAGE] = `*bad message* ${info.message}`;
+        } else {
+            const m = transformMessage(o);
+            info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
+        }
     } catch (error) {
-        info[MESSAGE] = '*bad message*: ' + info.message ;
+        info[MESSAGE] = '*bad message*';
     }
     return info;
 
@@ -146,9 +160,10 @@ const logger = winston.createLogger({
 });
 if (argv.file)
     logger.add(new winston.transports.File({
-    filename: argv.file,
-    format: logFormat({ color: false, padding: false}),
-}));
+        filename: argv.file,
+        format: logFormat({ color: false, padding: false}),
+        maxsize: argv.maxSize * 1024,
+    }));
 
 const makeLogLineHandler = (handler) => {
     var response = '';
