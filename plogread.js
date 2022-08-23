@@ -7,7 +7,6 @@ const { hideBin } = require('yargs/helpers');
 const { SerialPort } = require('serialport');
 const clc = require('cli-color');
 const { MESSAGE } = require('triple-beam');
-const jsonStringify = require('safe-stable-stringify');
 const logform = require('logform');
 const winston = require('winston');
 
@@ -20,7 +19,7 @@ const facilityNumWidth = 4;
 const DEFAULT_LOG_FILE_MAX_SIZE = 10 * 1024;
 
 const argv = yargs(hideBin(process.argv))
-    .version('0.1.0-pre.1')
+    .version('1.0.0')
     .option('device', {
         alias: 'd',
         describe: 'Serial device name',
