@@ -133,35 +133,20 @@ const logFormat = logform.format((info, opts) => {
         info[MESSAGE] = '*bad message*';
     }
     return info;
-
-    const stringifiedRest = jsonStringify(Object.assign({}, info, {
-        level: undefined,
-        message: undefined,
-        splat: undefined
-    }));
-
-    const padding = info.padding && info.padding[info.level] || '';
-    if (stringifiedRest !== '{}') {
-        info[MESSAGE] = `${info.level}:${padding} ${info.message} ${stringifiedRest}`;
-    } else {
-        info[MESSAGE] = `${info.level}:${padding} ${info.message}`;
-    }
-
-    return info;
 });
 
 const logger = winston.createLogger({
     level: 'debug',
     transports: [
         new winston.transports.Console({
-            format: logFormat({ color: argv.color, padding: true}),
+            format: logFormat({ color: argv.color, padding: true }),
         }),
     ],
 });
 if (argv.file)
     logger.add(new winston.transports.File({
         filename: argv.file,
-        format: logFormat({ color: false, padding: false}),
+        format: logFormat({ color: false, padding: false }),
         maxsize: argv.maxSize * 1024,
     }));
 
