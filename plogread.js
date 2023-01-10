@@ -107,10 +107,6 @@ const logFormat = logform.format((info, opts) => {
 
     /* a message is a log line, split it into an object with fields */
     const split = message => {
-        //console.log('debug raw message:', message);
-        message = message.trim();
-        if (! message)
-            throw new Error('message is null');
         const pos = message.search(':');
         if (pos < 0)
             throw new Error('no ":" found in message');
@@ -170,6 +166,11 @@ const logFormat = logform.format((info, opts) => {
     };
 
     try {
+        info.message = info.message.trim();
+        if (! info.message) {
+            info[MESSAGE] = '';
+            return;
+        }
         const o = split(fixMessage(info.message));
         const m = transformMessage(o);
         info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
