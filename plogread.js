@@ -11,7 +11,7 @@ const logform = require('logform');
 const winston = require('winston');
 
 const timestampWidth = 10;
-const modWidth = 4;
+const modWidth = 6;
 const taskWidth = 25;
 const facilityNameWidth = 20;
 const facilityNumWidth = 4;
@@ -52,8 +52,10 @@ const argv = yargs(hideBin(process.argv))
         default: true,
     })
     .option('raw', {
+        alias: 'r',
         describe: 'raw mode',
-        type: 'boolean',
+        nargs: 1,
+        type: 'string',
     })
     .help()
     .alias('help', 'h')
@@ -61,18 +63,65 @@ const argv = yargs(hideBin(process.argv))
     .argv;
 
 const logFormat = logform.format((info, opts) => {
+    /**
+     * When I set breakpoints, and the program was stopped in a breakpoint
+     * in the debugger, the output message could be damaged. But in most
+     * of time, a damaged message just have some garbage characters at the
+     * beginning of the message, so I can still remove the leading garbage
+     * characters and recovery the message.
+     */
+    const fixMessage = message => {
+        var s = 'wait-ticks';
+        var n;
+        var m = '';
+
+        for (const c of message) {
+            switch (s) {
+                case 'wait-ticks':
+                    if (c >= '0' && c <= '9') {
+                        s = 'ticks';
+                        n = 1;
+                        m = c;
+                    }
+                    break;
+                case 'ticks':
+                    if (c >= '0' && c <= '9') {
+                        ++n;
+                        m += c;
+                    } else if (c == ' ' && n >= 6) {
+                        m += c;
+                        s = 'remaining';
+                    } else {
+                        s = 'wait-ticks';
+                        m = '';
+                    }
+                    break;
+                case 'remaining':
+                    m += c;
+                    break;
+            }
+        }
+
+        return m;
+    };
+
     /* a message is a log line, split it into an object with fields */
     const split = message => {
+        //console.log('debug raw message:', message);
         message = message.trim();
-        if (! message) return null;
+        if (! message)
+            throw new Error('message is null');
         const pos = message.search(':');
-        if (pos < 0) return null;
+        if (pos < 0)
+            throw new Error('no ":" found in message');
         message = message.slice(0, pos) + message.slice(pos + 1);
         const words = message.trim().split(/\s+/);
         var [ticks, mod, task, facility] = words;
         const msg = words.slice(4).join(' ');
-        if (msg === undefined) return null; /* an incompleted message */
-        if (isNaN(parseInt(ticks))) return null; /* bad message */
+        if (msg === undefined)
+            throw new Error('message too short');
+        if (isNaN(parseInt(ticks)))
+            throw new Error(`ticks NaN: ${ticks}`);
         const timestamp = ticks
             ? (ticks / 1000).toFixed(3).slice(0, timestampWidth)
             : '';
@@ -121,15 +170,11 @@ const logFormat = logform.format((info, opts) => {
     };
 
     try {
-        const o = split(info.message);
-        if (! o) {
-            info[MESSAGE] = `*bad message* ${info.message}`;
-        } else {
-            const m = transformMessage(o);
-            info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
-        }
+        const o = split(fixMessage(info.message));
+        const m = transformMessage(o);
+        info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
     } catch (error) {
-        info[MESSAGE] = '*bad message*';
+        info[MESSAGE] = `*Error:* ${error.message}. The raw message is: ${info.message}`;
     }
     return info;
 });
@@ -167,12 +212,23 @@ const makeLogLineHandler = (handler) => {
     };
 };
 
+function RawLogger(filename) {
+    this.ws = fs.createWriteStream(filename);
+}
+
+RawLogger.prototype.log = function(line) {
+    this.ws.write(line + '\n');
+}
+
+var rawLogger;
+if (argv.raw) rawLogger = new RawLogger(argv.raw);
+
 const device = new SerialPort({
     path: argv.device,
     baudRate: argv.baud,
     autoOpen: false,
 }).on('data', makeLogLineHandler(line => {
-    if (argv.raw) return console.log(line);
+    if (rawLogger) rawLogger.log(line);
     logger.info(line);
 }));
 
