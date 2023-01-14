@@ -9,6 +9,7 @@ const clc = require('cli-color');
 const { MESSAGE } = require('triple-beam');
 const logform = require('logform');
 const winston = require('winston');
+const moment = require('moment');
 
 const timestampWidth = 10;
 const modWidth = 6;
@@ -80,15 +81,13 @@ const logFormat = logform.format((info, opts) => {
                 case 'wait-ticks':
                     if (c >= '0' && c <= '9') {
                         s = 'ticks';
-                        n = 1;
                         m = c;
                     }
                     break;
                 case 'ticks':
                     if (c >= '0' && c <= '9') {
-                        ++n;
                         m += c;
-                    } else if (c == ' ' && n >= 6) {
+                    } else if (c == ' ') {
                         m += c;
                         s = 'remaining';
                     } else {
@@ -135,6 +134,7 @@ const logFormat = logform.format((info, opts) => {
      */
     const transformMessage = m => {
         const noColor = str => str;
+        const st = ! opts.color ? noColor : clc.white;
         const ts = ! opts.color ? noColor : clc.green;
         const md = ! opts.color ? noColor : clc.blue;
         const t = ! opts.color ? noColor : clc.yellow;
@@ -146,7 +146,7 @@ const logFormat = logform.format((info, opts) => {
 
         try {
             m.timestamp = new Date(parseInt(parseFloat(m.timestamp) * 1000))
-                .toISOString().slice(11, 22);
+                .toISOString().slice(11, 23);
         } catch (err) {
             m.timestamp = '*bad ticks*'
         }
@@ -157,6 +157,7 @@ const logFormat = logform.format((info, opts) => {
             , typeof m.facility == 'number'
             ? facilityNumWidth : facilityNameWidth);
 
+        m.systime = st(moment().format('YYYYMMDDThh:mm:ss.SSS'));
         m.timestamp = ts(m.timestamp);
         m.mod = md(m.mod);
         m.task = t(m.task);
@@ -173,7 +174,7 @@ const logFormat = logform.format((info, opts) => {
         }
         const o = split(fixMessage(info.message));
         const m = transformMessage(o);
-        info[MESSAGE] = `${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
+        info[MESSAGE] = `${m.systime} ${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
     } catch (error) {
         info[MESSAGE] = `*Error:* ${error.message}. The raw message is: ${info.message}`;
     }
@@ -229,7 +230,9 @@ const device = new SerialPort({
     baudRate: argv.baud,
     autoOpen: false,
 }).on('data', makeLogLineHandler(line => {
-    if (rawLogger) rawLogger.log(line);
+    if (rawLogger) rawLogger.log(
+        `${moment().format('YYYYMMDDThh:mm:ss.SSS')} ${line}`
+    );
     logger.info(line);
 }));
 
