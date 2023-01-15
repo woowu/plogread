@@ -108,7 +108,7 @@ const logFormat = logform.format((info, opts) => {
     const split = message => {
         const pos = message.search(':');
         if (pos < 0)
-            throw new Error('no ":" found in message');
+            throw new Error('bad format');
         message = message.slice(0, pos) + message.slice(pos + 1);
         const words = message.trim().split(/\s+/);
         var [ticks, mod, task, facility] = words;
