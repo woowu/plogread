@@ -157,7 +157,7 @@ const logFormat = logform.format((info, opts) => {
             , typeof m.facility == 'number'
             ? facilityNumWidth : facilityNameWidth);
 
-        m.systime = st(moment().format('YYYYMMDDThh:mm:ss.SSS'));
+        m.systime = st(moment().format('YYYYMMDDTHH:mm:ss.SSS'));
         m.timestamp = ts(m.timestamp);
         m.mod = md(m.mod);
         m.task = t(m.task);
