@@ -58,6 +58,11 @@ const argv = yargs(hideBin(process.argv))
         nargs: 1,
         type: 'string',
     })
+    .option('append', {
+        alias: 'a',
+        describe: 'append to log files',
+        type: 'boolean',
+    })
     .help()
     .alias('help', 'h')
     .alias('version', 'v')
@@ -190,10 +195,11 @@ const logger = winston.createLogger({
     ],
 });
 if (argv.file)
-    logger.add(new winston.transports.File({
-        filename: argv.file,
-        format: logFormat({ color: false, padding: false }),
-        maxsize: argv.maxSize * 1024,
+    logger.add(new winston.transports.Stream({
+        //filename: argv.file,
+        stream: fs.createWriteStream(argv.file, { flags: argv.append ? 'a' : 'w' }),
+        format: logFormat({ color: false, padding: true }),
+        //maxsize: argv.maxSize * 1024,
     }));
 
 const makeLogLineHandler = (handler) => {
@@ -214,8 +220,8 @@ const makeLogLineHandler = (handler) => {
     };
 };
 
-function RawLogger(filename) {
-    this.ws = fs.createWriteStream(filename);
+function RawLogger(filename, append) {
+    this.ws = fs.createWriteStream(filename, { flags: append ? 'a' : 'w' });
 }
 
 RawLogger.prototype.log = function(line) {
@@ -223,7 +229,7 @@ RawLogger.prototype.log = function(line) {
 }
 
 var rawLogger;
-if (argv.raw) rawLogger = new RawLogger(argv.raw);
+if (argv.raw) rawLogger = new RawLogger(argv.raw, argv.append);
 
 const device = new SerialPort({
     path: argv.device,
