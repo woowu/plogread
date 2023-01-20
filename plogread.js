@@ -11,11 +11,10 @@ const logform = require('logform');
 const winston = require('winston');
 const moment = require('moment');
 
-const timestampWidth = 10;
-const modWidth = 6;
-const taskWidth = 13;
+const modWidth = 4;
+const taskWidth = 12;
 const facilityNameWidth = 20;
-const facilityNumWidth = 3;
+const facilityNumWidth = 4;
 
 const DEFAULT_LOG_FILE_MAX_SIZE = 10 * 1024;
 
@@ -122,9 +121,7 @@ const logFormat = logform.format((info, opts) => {
             throw new Error('message too short');
         if (isNaN(parseInt(ticks)))
             throw new Error(`ticks NaN: ${ticks}`);
-        const timestamp = ticks
-            ? (ticks / 1000).toFixed(3).slice(0, timestampWidth)
-            : '';
+        const timestamp = ticks;
         mod = mod ? mod : '';
         task = task ? task : '';
         if (! isNaN(parseInt(facility)))
@@ -150,9 +147,24 @@ const logFormat = logform.format((info, opts) => {
         }
 
         try {
-            m.timestamp = new Date(parseInt(parseFloat(m.timestamp) * 1000))
-                .toISOString().slice(11, 23);
+            var ticks = m.timestamp;
+            const hr = parseInt(ticks / 1000 / 3600);
+            ticks -= hr * 3600 * 1000;
+            const min = parseInt(ticks / 1000 / 60);
+            ticks -= min * 60 * 1000;
+            const s = parseInt(ticks / 1000);
+            ticks -= s* 1000;
+            const ms = ticks;
+
+            const aligned = (n, width, c) => {
+                const s = '' + n;
+                s.padStart(width, c);
+                return s;
+            };
+            m.timestamp = `${aligned(hr, 4)}:${aligned(min, 2, '0')}:${aligned(s, 2, '0')}.${aligned(ms, 3, '0')}`;
         } catch (err) {
+            console.error(err);
+            process.exit();
             m.timestamp = '*bad ticks*'
         }
         m.mod = alignRight(m.mod, modWidth);
