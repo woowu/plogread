@@ -158,10 +158,9 @@ const logFormat = logform.format((info, opts) => {
 
             const aligned = (n, width, c) => {
                 const s = '' + n;
-                s.padStart(width, c);
-                return s;
+                return s.padStart(width, c);
             };
-            m.timestamp = `${aligned(hr, 4)}:${aligned(min, 2, '0')}:${aligned(s, 2, '0')}.${aligned(ms, 3, '0')}`;
+            m.timestamp = `${aligned(hr, 4, '0')}:${aligned(min, 2, '0')}:${aligned(s, 2, '0')}.${aligned(ms, 3, '0')}`;
         } catch (err) {
             console.error(err);
             process.exit();
