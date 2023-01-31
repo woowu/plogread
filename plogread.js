@@ -13,7 +13,7 @@ const moment = require('moment');
 
 const modWidth = 4;
 const taskWidth = 35;
-const facilityNameWidth = 28;
+const facilityNameWidth = 30;
 const facilityNumWidth = 4;
 
 const DEFAULT_LOG_FILE_MAX_SIZE = 10 * 1024;
