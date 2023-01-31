@@ -12,8 +12,8 @@ const winston = require('winston');
 const moment = require('moment');
 
 const modWidth = 4;
-const taskWidth = 30;
-const facilityNameWidth = 30;
+const taskWidth = 35;
+const facilityNameWidth = 28;
 const facilityNumWidth = 4;
 
 const DEFAULT_LOG_FILE_MAX_SIZE = 10 * 1024;
@@ -108,27 +108,41 @@ const logFormat = logform.format((info, opts) => {
         return m;
     };
 
-    /* a message is a log line, split it into an object with fields */
+    /* A message is a log line, split it into an object with fields.
+     *
+     * Message format:
+     * tttttt Mod TaskName Facility: MessageBody.
+     * - TaskName can contain spaces.
+     */
     const split = message => {
         const pos = message.search(':');
-        if (pos < 0)
-            throw new Error('bad format');
-        message = message.slice(0, pos) + message.slice(pos + 1);
-        const words = message.trim().split(/\s+/);
-        var [ticks, mod, task, facility] = words;
-        const msg = words.slice(4).join(' ');
-        if (msg === undefined)
-            throw new Error('message too short');
-        if (isNaN(parseInt(ticks)))
-            throw new Error(`ticks NaN: ${ticks}`);
-        const timestamp = ticks;
-        mod = mod ? mod : '';
-        task = task ? task : '';
-        if (! isNaN(parseInt(facility)))
-            facility = parseInt(facility);
-        else
-            facility = facility ? facility : '';
-        return { timestamp, mod, task, facility, msg };
+        if (pos < 0) throw new Error('bad format');
+
+        var p = pos - 1;
+        while (p >= 0 && message[p] != ' ') --p;
+        const facility = message.slice(p + 1, pos);
+        if (! facility) throw new Error('bad format');
+        while (message[p] == ' ') --p;
+        /* p points to the last char of the task name */
+
+        var q = 0;
+        while (message[q] != ' ') ++q;
+        const ticks = message.slice(0, q);
+        if (isNaN(parseInt(ticks))) throw new Error('bad format');
+        while (message[q] == ' ') ++q;
+        /* q points to the first char of the module name */
+
+        var j = q;
+        while (message[j] != ' ') ++j;
+        const mod = message.slice(q, j);
+        if (! mod) throw new Error('bad format');
+        while (message[j] == ' ') ++j;
+        /* j points to the first char of the task name */
+
+        const task = message.slice(j, p + 1);
+        const msg = message.slice(pos + 1).trim();
+
+        return { timestamp: ticks, mod, task, facility, msg };
     };
 
     /**
