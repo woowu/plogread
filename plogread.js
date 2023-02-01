@@ -61,6 +61,7 @@ const argv = yargs(hideBin(process.argv))
         alias: 'a',
         describe: 'append to log files',
         type: 'boolean',
+        default: true,
     })
     .help()
     .alias('help', 'h')
