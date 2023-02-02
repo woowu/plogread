@@ -39,13 +39,6 @@ const argv = yargs(hideBin(process.argv))
         nargs: 1,
         type: 'string',
     })
-    .option('max-size', {
-        alias: 's',
-        describe: 'maxsize of each saved log file (in KB)',
-        nargs: 1,
-        type: 'number',
-        default: DEFAULT_LOG_FILE_MAX_SIZE,
-    })
     .option('color', {
         describe: 'ascii color',
         type: 'boolean',
@@ -70,52 +63,43 @@ const argv = yargs(hideBin(process.argv))
 
 const logFormat = logform.format((info, opts) => {
     /**
-     * When I set breakpoints, and the program was stopped in a breakpoint
-     * in the debugger, the output message could be damaged. But in most
-     * of time, a damaged message just have some garbage characters at the
-     * beginning of the message, so I can still remove the leading garbage
-     * characters and recovery the message.
+     * Non-printable char in a log file can cause issue when using text tool
+     * like grep, hence I replace them with '.' This function provided for
+     * remove/replace non-printable characters in the message which may caused
+     * by the meter UART sending is interrupted when IAR enter a breakpoint.
      */
     const fixMessage = message => {
-        var s = 'wait-ticks';
-        var n;
+        const PRINTABLE_ASCII_MIN = 32;
+        const PRINTABLE_ASCII_MAX = 127;
+
+        var j = 0;
+        while (j < message.length && (message.charCodeAt(j) < PRINTABLE_ASCII_MIN
+                || message.charCodeAt(j) > PRINTABLE_ASCII_MAX))
+            ++j;
+        var q = message.length - 1;
+        while (q >= 0 && (message.charCodeAt(q) < PRINTABLE_ASCII_MIN
+                || message.charCodeAt(q) > PRINTABLE_ASCII_MAX))
+            --q;
+
         var m = '';
-
-        for (const c of message) {
-            switch (s) {
-                case 'wait-ticks':
-                    if (c >= '0' && c <= '9') {
-                        s = 'ticks';
-                        m = c;
-                    }
-                    break;
-                case 'ticks':
-                    if (c >= '0' && c <= '9') {
-                        m += c;
-                    } else if (c == ' ') {
-                        m += c;
-                        s = 'remaining';
-                    } else {
-                        s = 'wait-ticks';
-                        m = '';
-                    }
-                    break;
-                case 'remaining':
-                    m += c;
-                    break;
-            }
+        for (const c of message.slice(j, q + 1)) {
+            if (c.charCodeAt(0) < PRINTABLE_ASCII_MIN
+                || c.charCodeAt(0) > PRINTABLE_ASCII_MAX)
+                m += '.'
+            else
+                m += c;
         }
-
+            
         return m;
     };
 
-    /* A message is a log line, split it into an object with fields.
+    /* A message is a log line, parse it into an object with fields.
      *
      * Message format:
      * tttttt Mod TaskName Facility: MessageBody.
      * - TaskName can contain spaces.
      */
-    const split = message => {
+    const parseMessage = message => {
         const pos = message.search(':');
         if (pos < 0) throw new Error('bad format');
 
@@ -203,8 +187,7 @@ const logFormat = logform.format((info, opts) => {
             info[MESSAGE] = '';
             return;
         }
-        const o = split(fixMessage(info.message));
-        const m = transformMessage(o);
+        const m = transformMessage(parseMessage(fixMessage(info.message)));
         info[MESSAGE] = `${m.systime} ${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
     } catch (error) {
         info[MESSAGE] = `*Error:* ${error.message}. The raw message is: ${info.message}`;
@@ -222,10 +205,8 @@ const logger = winston.createLogger({
 });
 if (argv.file)
     logger.add(new winston.transports.Stream({
-        //filename: argv.file,
         stream: fs.createWriteStream(argv.file, { flags: argv.append ? 'a' : 'w' }),
         format: logFormat({ color: false, padding: true }),
-        //maxsize: argv.maxSize * 1024,
     }));
 
 const makeLogLineHandler = (handler) => {
