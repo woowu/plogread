@@ -66,7 +66,8 @@ const logFormat = logform.format((info, opts) => {
      * Non-printable char in a log file can cause issue when using text tool
      * like grep, hence I replace them with '.' This function provided for
      * remove/replace non-printable characters in the message which may caused
-     * by the meter UART sending is interrupted when IAR enter a breakpoint.
+     * by the meter UART has some remainning bytes in the buffer filled before
+     * the meter reset. These previous remained bytes are likely been damaged.
      */
     const fixMessage = message => {
         const PRINTABLE_ASCII_MIN = 32;
