@@ -188,7 +188,13 @@ const logFormat = logform.format((info, opts) => {
             info[MESSAGE] = '';
             return;
         }
-        const m = transformMessage(parseMessage(fixMessage(info.message)));
+        /* info.message must replaced by the fixed version for removing the
+         * possible existing binary characters, otherwise, when the parsing
+         * fail and the info.message is printed out as raw, it would make the
+         * log file being complained by grep for the binary data in it.
+         */
+        info.message = fixMessage(info.message);
+        const m = transformMessage(parseMessage(info.message));
         info[MESSAGE] = `${m.systime} ${m.timestamp} ${m.mod} ${m.task} ${m.facility} ${m.msg}`;
     } catch (error) {
         info[MESSAGE] = `*Error:* ${error.message}. The raw message is: ${info.message}`;
