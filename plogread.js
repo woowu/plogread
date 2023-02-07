@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('fs');
+const net = require('net');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const { SerialPort } = require('serialport');
@@ -234,6 +235,46 @@ const makeLogLineHandler = (handler) => {
     };
 };
 
+function startSerialReceive({ device, baud, logger, rawLogger })
+{
+    const serial = new SerialPort({
+        path: argv.device,
+        baudRate: argv.baud,
+        autoOpen: false,
+    }).on('data', makeLogLineHandler(line => {
+        if (rawLogger) rawLogger.log(
+            `${moment().format('YYYYMMDDThh:mm:ss.SSS')} ${line}`
+        );
+        logger.info(line);
+    }));
+
+    serial.open(err => {
+        if (err) {
+            console.error(`Error opening ${device}:`, err);
+            process.exit(1);
+        }
+    });
+}
+
+function startTcpReceive({ server, port, logger, rawLogger })
+{
+    const client = new net.Socket();
+    client.connect(port, server, () => {
+    });
+    client.on('data', makeLogLineHandler(line => {
+        if (rawLogger) rawLogger.log(
+            `${moment().format('YYYYMMDDThh:mm:ss.SSS')} ${line}`
+        );
+        logger.info(line);
+    }));
+    client.on('error', err => {
+        console.error(err);
+    });
+    client.on('close', () => {
+        process.exit(0);
+    });
+}
+
 function RawLogger(filename, append) {
     this.ws = fs.createWriteStream(filename, { flags: append ? 'a' : 'w' });
 }
@@ -245,20 +286,20 @@ RawLogger.prototype.log = function(line) {
 var rawLogger;
 if (argv.raw) rawLogger = new RawLogger(argv.raw, argv.append);
 
-const device = new SerialPort({
-    path: argv.device,
-    baudRate: argv.baud,
-    autoOpen: false,
-}).on('data', makeLogLineHandler(line => {
-    if (rawLogger) rawLogger.log(
-        `${moment().format('YYYYMMDDThh:mm:ss.SSS')} ${line}`
-    );
-    logger.info(line);
-}));
+if (! argv.device.search('TCP:')) {
+    const server = argv.device.slice('TCP:'.length).split(',')[0];
+    const port = +argv.device.slice('TCP:'.length).split(',')[1];
+    startTcpReceive({
+        server,
+        port,
+        logger,
+        rawLogger,
+    });
+} else
+    startSerialReceive({
+        device: argv.device,
+        baud: argv.baud,
+        logger,
+        rawLogger,
+    });
 
-device.open(err => {
-    if (err) {
-        console.error(`Error opening ${argv.device}:`, err.message);
-        process.exit(1);
-    }
-});
