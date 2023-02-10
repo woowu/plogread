@@ -149,6 +149,11 @@ const logFormat = logform.format((info, opts) => {
 
         try {
             var ticks = m.timestamp;
+            var negTime = false;
+            if (ticks >= 0x800000) {
+                ticks = 0x100000000 - ticks;
+                negTime = true;
+            }
             const hr = parseInt(ticks / 1000 / 3600);
             ticks -= hr * 3600 * 1000;
             const min = parseInt(ticks / 1000 / 60);
@@ -161,7 +166,7 @@ const logFormat = logform.format((info, opts) => {
                 const s = '' + n;
                 return s.padStart(width, c);
             };
-            m.timestamp = `${aligned(hr, 4, '0')}:${aligned(min, 2, '0')}:${aligned(s, 2, '0')}.${aligned(ms, 3, '0')}`;
+            m.timestamp = `${negTime ? '-' : ' '}${aligned(hr, 4, '0')}:${aligned(min, 2, '0')}:${aligned(s, 2, '0')}.${aligned(ms, 3, '0')}`;
         } catch (err) {
             console.error(err);
             process.exit();
