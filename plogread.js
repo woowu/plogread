@@ -100,12 +100,13 @@ const logFormat = logform.format((() => {
 
         const extractSymbols = msg => {
             const k = msg.search('@Symbols:');
-            if (k == -1) return;
+            if (k == -1) return false;
 
             const tokens = msg.slice(k + '@Symbols:'.length).trim().split(' ');
             for (const t of tokens) {
                 symbols[t.split('=')[0]] = t.split('=')[1];
             }
+            return true;
         };
 
         const translateSymbols = msg => {
@@ -151,8 +152,18 @@ const logFormat = logform.format((() => {
             const task = message.slice(j, p + 1);
             var msg = message.slice(pos + 1).trim();
 
-            extractSymbols(msg);
-            msg = translateSymbols(msg);
+            /* When a log message contains symbols definition, I should only
+             * extract the definitions without doing the symbol value
+             * translation. For example, in a log
+             *   ... @Symbols: var_a=100 ...
+             * the symbol 'var_a' may still existed in the symbol table, if I
+             * do the translation for this log message, it will be printed out
+             * as
+             *   ... @Symbols: 100=100 ...
+             * , which is wrong.
+             */
+            if (! extractSymbols(msg))
+                msg = translateSymbols(msg);
 
             return { timestamp: ticks, mod, task, facility, msg };
         };
@@ -212,7 +223,7 @@ const logFormat = logform.format((() => {
                 , typeof m.facility == 'number'
                 ? facilityNumWidth : facilityNameWidth);
 
-            m.systime = st(moment().format('YYYYMMDDTHH:mm:ss.SSS'));
+            m.systime = st(moment().format('YYYY-MM-DDTHH:mm:ss.SSS'));
             m.timestamp = ts(m.timestamp);
             m.mod = md(m.mod);
             m.task = t(m.task);
