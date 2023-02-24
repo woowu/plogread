@@ -23,7 +23,7 @@ const argv = yargs(hideBin(process.argv))
     .version('1.0.0')
     .option('device', {
         alias: 'd',
-        describe: 'Serial device name',
+        describe: 'Serial device name, or server socket in form TCP:ip-addr:port',
         demandOption: true,
         nargs: 1,
     })
@@ -337,8 +337,8 @@ var rawLogger;
 if (argv.raw) rawLogger = new RawLogger(argv.raw, argv.append);
 
 if (! argv.device.search('TCP:')) {
-    const server = argv.device.slice('TCP:'.length).split(',')[0];
-    const port = +argv.device.slice('TCP:'.length).split(',')[1];
+    const server = argv.device.slice('TCP:'.length).split(':')[0];
+    const port = +argv.device.slice('TCP:'.length).split(':')[1];
     startTcpReceive({
         server,
         port,
