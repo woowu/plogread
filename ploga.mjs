@@ -1,8 +1,14 @@
 #!/usr/bin/node --harmony
 
-import yargs from 'yargs/yargs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { exec } from 'node:child_process';
+import crypto from 'node:crypto';
 import readline from 'node:readline';
+import yargs from 'yargs/yargs';
 import fs from 'node:fs';
+
+const TICK_START_VALUE = 0xfffc0000;
 
 function WaitPowerUp(machine)
 {
@@ -10,16 +16,17 @@ function WaitPowerUp(machine)
 }
 
 WaitPowerUp.prototype.putLine = function(line, lno) {
-    if (line.search('system started') < 0) return;
+    const m = line.match(/system started.*coldStart ([01])/);
+    if (! m) return;
 
     const words = line.split(/\s+/);
     const powerOnTime = parseFloat(words[1]) * 1000;
 
     this._machine.setState(new PowerOn(this._machine
-        , powerOnTime, lno));
+        , powerOnTime, lno, m[1] == '1'));
 };
 
-function PowerOn(machine, powerOnTime, lnoFirst)
+function PowerOn(machine, powerOnTime, lnoFirst, coldStart)
 {
     this._machine = machine;
     this._lastPowerStateMaster = 'None';
@@ -28,6 +35,7 @@ function PowerOn(machine, powerOnTime, lnoFirst)
     this._lastTime = null;
     this._lnoFirst = lnoFirst;
     this._lnoLast = lnoFirst;
+    this._coldStart = coldStart;
 
     this._powerDownStartTime = null;
 }
@@ -42,13 +50,14 @@ PowerOn.prototype.putLine = function(line, lno) {
     var shutdownEndTime;
     var powerCycleCompleted = false;
 
-    if (line.search('system started') >= 0) {
+    const m = line.match(/system started.*coldStart ([01])/);
+    if (m) {
         if (this._lastTime === null)
             throw new Error(
                 `lost logs at ${lno}: ` + line);
         shutdownEndTime = this._lastTime;
         powerCycleCompleted = true;
-        nextState = new PowerOn(this._machine, lno, thisTime);
+        nextState = new PowerOn(this._machine, lno, thisTime, m[1] == '1');
     } else if (line.search('UARTs will be stopped') >= 0) {
         shutdownEndTime = thisTime;
         powerCycleCompleted = true;
@@ -62,19 +71,19 @@ PowerOn.prototype.putLine = function(line, lno) {
             ? shutdownEndTime - this._powerDownStartTime
             : 2**32 - this._powerDownStartTime + shutdownEndTime;
 
-        const powerCycle = {
-        };
-
         this._machine.completePowerCycle({
             /* lno range of this power cycle.
              */
             lnoFirst: this._lnoFirst,
             lnoLast: this._lnoLast,
+            
+            coldStart: this._coldStart,
 
             /* time info
              */
             powerOnTime: this._powerOnTime,
             lastTime: this._lastTime,
+            powerDownStartTime: this._powerDownStartTime,
             powerDownDuration,
 
             lastPowerState: this._lastPowerStateMaster,
@@ -125,27 +134,37 @@ function LogParser()
     this._state = new WaitPowerUp(this);
     this._powerCycles = [];
     this._invalidPowerCycles = [];
+    this._maxLines = 0;
 }
+
+LogParser.prototype.setMaxLines = function(n) {
+    this._maxLines = n;
+};
 
 LogParser.prototype.setState = function(s) {
     this._state = s;
 };
 
 LogParser.prototype.putLine = function(line) {
+    if (this._maxLines && this._lineCount == this._maxLines)
+        return;
     ++this._lineCount;
     if (line.search('bad format') >= 0) return;
     this._state.putLine(line, this._lineCount);
 };
 
 LogParser.prototype.completePowerCycle = function(powerCycle) {
-    this._powerCycles.push(powerCycle);
+    if (! powerCycle.coldStart)
+        this._powerCycles.push(powerCycle);
+    else
+        console.log('dropped cold-start power cycle');
 };
 
 LogParser.prototype.putInvalidPowerCycle = function(powerCycle) {
     this._invalidPowerCycles.push(powerCycle);
 };
 
-LogParser.prototype.report = function() {
+LogParser.prototype.report = function(datasetName, rScript) {
     console.log(`Analyzed ${this._powerCycles.length} power cycles:\n`);
 
     const types = {};
@@ -168,18 +187,43 @@ LogParser.prototype.report = function() {
     console.log('\n${this._invalidPowerCycles.length} Invalid power cycles:');
     for (const c of this._invalidPowerCycles)
         console.log(`  [${c.lnoFirst}, ${c.lnoLast}]: ${c.line}`);
+
+    if (! rScript) return;
+
+    const tmpDir = tmpdir();
+    const csvName = path.join(tmpDir
+        , `${crypto.randomBytes(6).readUIntBE(0, 6).toString(36)}.csv`);
+    const outputName = path.join(tmpDir, `${datasetName}.png`)
+    const os = fs.createWriteStream(csvName);
+    os.write('PowerDownStartTime,PowerDownUsedTime,StateWhenPowerDown\n');
+    for (const c of this._powerCycles) {
+        var t = c.powerDownStartTime;
+        if (t < TICK_START_VALUE)
+            t += 2**32 - TICK_START_VALUE;
+        else
+            t -= TICK_START_VALUE;
+        os.write(`${t/1000},${c.powerDownDuration/1000},${c.lastPowerState}\n`);
+    }
+    os.end();
+    exec(`Rscript ${rScript} --csv ${csvName} --out ${outputName}`
+        , (err, stdout, stderr) => {
+            if (err) throw new Error(err);
+            console.log(`saved ${outputName}`);
+        });
 };
 
 function stat(argv)
 {
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
     const parser = new LogParser;
+    if (argv.maxLines !== undefined) parser.setMaxLines(argv.maxLines);
 
     rl.on('line', line => {
         parser.putLine(line);
     });
     rl.on('close', () => {
-        parser.report();
+        parser.report(path.basename(argv.file).split('.').slice(0, -1).join('.')
+            , argv.plot);
     });
 }
 
@@ -194,7 +238,20 @@ const argv = yargs(process.argv.slice(2))
         type: 'string',
        }
     )
-    .command('stat', 'statistics', {
+    .option('m', {
+        alias: 'max-lines',
+        describe: 'max number of lines to read from the log', 
+        nargs: 1,
+        type: 'number',
+       }
+    )
+    .command('stat', 'statistics', yargs => {
+            yargs.option('plot', {
+                alias: 'p',
+                describe: 'R script filename for plotting',
+                nargs: 1,
+                type: 'string',
+            });
         },
         stat,
     )
