@@ -96,13 +96,15 @@ PowerOn.prototype.putLine = function(line, lno) {
 
     if (line.search('handle PowerBelowPowersaveLevel') >= 0
         || line.search('handle PowerBelowShutdownLevel') >= 0
-        || line.search('handlePowerAboveStartupLevel') >= 0) {
+        || line.search('handlePowerAboveStartupLevel') >= 0
+        || line.search('handle PowerAboveStartupLevel') >= 0) {
         const words = line.split(/\s+/);
         this._powerDownStartTime = parseInt(parseFloat(words[1]) * 1000);
     }
 
     if (line.search('logging stopped') >= 0
-        || line.search('assertion failed') >= 0) {
+        || line.search('assertion failed') >= 0
+        || line.search('watchdog triggered') >= 0) {
         this._machine.putInvalidPowerCycle({
             /* lno range of this power cycle.
              */
