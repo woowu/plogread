@@ -10,141 +10,235 @@ import fs from 'node:fs';
 
 const TICK_START_VALUE = 0xfffc0000;
 
-function WaitPowerUp(machine)
+/*===========================================================================*/
+
+function parseTimeAndTick(logLine)
 {
+    const words = logLine.split(/\s+/);
+    const time = new Date(words[0]);
+    const tick = parseInt(parseFloat(words[1]) * 1000);
+
+    return {
+        time,
+        tick,
+        message: logLine.slice(logLine.search(words[1]) + words[1].length)
+            .trim()
+    };
+}
+
+/*===========================================================================*/
+
+function PscmWaitStart(machine)
+{
+    this.name = 'wait-start';
     this._machine = machine;
 }
 
-WaitPowerUp.prototype.putLine = function(line, lno) {
-    const m = line.match(/system started.*coldStart ([01])/);
+function SystemStart(machine, time, tick, lno, coldStart)
+{
+    this.name = 'system-start';
+    this._machine = machine;
+    this._machine.sendEvent( { name: 'start', time, tick, lno });
+    this._machine.setSystemStarted();
+}
+
+function PscmNormalOpr(machine, time, tick, lno)
+{
+    this.name = 'normal-opr';
+    this._machine = machine;
+    this._machine.sendEvent({ name: 'normal-opr', time, tick, lno });
+}
+
+function Wakeup(machine, time, tick, lno)
+{
+    this.name = 'wakeup';
+    this._machine = machine;
+    this._machine.sendEvent({ name: 'wakeup', time, tick, lno });
+}
+
+function PscmOnMains(machine, time, tick, lno)
+{
+    this.name = 'on-mains';
+    this._machine = machine;
+    this._machine.sendEvent({ name: 'on-mains', time, tick, lno });
+}
+
+function PscmInfrReady(machine, time, tick, lno)
+{
+    this.name = 'infr-ready';
+    this._machine = machine;
+    this._machine.sendEvent({ name: 'infr-ready', time, tick, lno });
+}
+
+function PscmWaitReset(machine, time, tick, lno)
+{
+    this.name = 'wait-reset';
+    this._machine = machine;
+    this._machine.sendEvent({ name: 'wait-reset', time, tick, lno });
+}
+
+PscmWaitStart.prototype.putLine = function(time, tick, message, lno) {
+    const m = message.match(/system started.*coldStart ([01])/);
     if (! m) return;
 
-    const words = line.split(/\s+/);
-    const powerOnTime = parseFloat(words[1]) * 1000;
-
-    this._machine.setState(new PowerOn(this._machine
-        , powerOnTime, lno, m[1] == '1'));
+    this._machine.setPscmState(new SystemStart(this._machine
+        , time, tick, lno, m[1] == '1'));
 };
 
-function PowerOn(machine, powerOnTime, lnoFirst, coldStart)
-{
-    this._machine = machine;
-    this._lastPowerStateMaster = 'None';
+SystemStart.prototype.putLine = function(time, tick, message, lno) {
+    if (message.search('enter psm wakeup') < 0) return;
+    this._machine.setPscmState(new Wakeup(this._machine), time, tick, lno);
+};
 
-    this._powerOnTime = powerOnTime;
-    this._lastTime = null;
-    this._lnoFirst = lnoFirst;
-    this._lnoLast = lnoFirst;
-    this._coldStart = coldStart;
-
-    this._powerDownStartTime = null;
+Wakeup.prototype.putLine = function(time, tick, message, lno) {
+    if (message.search('enter psm on-mains') < 0) return;
+    this._machine.setPscmState(new PscmOnMains(this._machine, time, tick, lno));
 }
 
-PowerOn.prototype.putLine = function(line, lno) {
-    this._lnoLast = lno;
+PscmOnMains.prototype.putLine = function(time, tick, message, lno) {
+    const toReset = message.search('enter psm wait-for-reset') >= 0;
+    const toInfr = message.search('enter psm infr-ready') >= 0;
 
-    const words = line.split(/\s+/);
-    const thisTime = parseInt(parseFloat(words[1]) * 1000);
-    var nextState;
+    if (! toReset && ! toInfr) return;
+
+    this._machine.setPscmState(
+        toInfr ? new PscmInfrReady(this._machine, time, tick, lno)
+        : new PscmWaitReset(this._machine, time, tick, lno)
+    );
+}
+
+PscmInfrReady.prototype.putLine = function(time, tick, message, lno) {
+    const toReset = message.search('enter psm wait-for-reset') >= 0;
+    const toNormal = message.search('enter psm normal-operation') >= 0;
+
+    if (! toReset && ! toNormal) return;
+
+    this._machine.setPscmState(
+        toNormal ? new PscmNormalOpr(this._machine, time, tick, lno)
+        : new PscmWaitReset(this._machine, time, tick, lno)
+    );
+}
+
+PscmNormalOpr.prototype.putLine = function(time, tick, message, lno) {
+    if (message.search('enter psm wait-for-reset') < 0) return;
+    this._machine.setPscmState(new PscmWaitReset(this._machine, time, tick, lno));
+}
+
+PscmWaitReset.prototype.onEnter = function() {
+    this._machine.completePowerCycle();
+    this._machine.setPscmState(new PscmWaitStart(this._machine));
+};
+
+/*===========================================================================*/
+
+const detectPowerSupplyEvent = function(message) {
+    const regexp = /PSCm (send|dispatch) event (Power\w+)/;
+    const m = message.match(regexp);
+    return { action: m ? m[1] : null, event: m ? m[2] : null };
+};
+
+function PsUnknown(machine)
+{
+    this.name = 'ps-unknown';
+    this._machine = machine;
+}
+
+function PsAboveStartup(machine)
+{
+    this.name = 'ps-above-startup';
+    this._machine = machine;
+}
+
+function PsBelowPowersave(machine, time, tick)
+{
+    this.name = 'ps-below-powersave';
+    this._machine = machine;
+    this._powerDownTime = { time, tick };
+}
+
+function PsBelowShutdown(machine)
+{
+    this.name = 'ps-below-shutdown';
+    this._machine = machine;
+}
+
+PsUnknown.prototype.putLine = function(time, tick, message) {
+    const { action, event } = detectPowerSupplyEvent(message);
+
+    if (action != 'send') return;
+
+    if (event == 'PowerAboveStartupLevel')
+        this._machine.setPsState(new PsAboveStartup(this._machine, time, tick));
+    else {
+        console.error(time, tick, message);
+        throw new Error(`lost power supply message in ${this.name} state. got ${event}`);
+    }
+}
+
+PsAboveStartup.prototype.putLine = function(time, tick, message) {
+    const { action, event } = detectPowerSupplyEvent(message);
+
+    if (action != 'send') return;
     
-    var shutdownEndTime;
-    var powerCycleCompleted = false;
-
-    const m = line.match(/system started.*coldStart ([01])/);
-    if (m) {
-        if (this._lastTime === null)
-            throw new Error(
-                `lost logs at ${lno}: ` + line);
-        shutdownEndTime = this._lastTime;
-        powerCycleCompleted = true;
-        nextState = new PowerOn(this._machine, lno, thisTime, m[1] == '1');
-    } else if (line.search('UARTs will be stopped') >= 0) {
-        shutdownEndTime = thisTime;
-        powerCycleCompleted = true;
-        nextState = new WaitPowerUp(this._machine);
+    if (event == 'PowerBelowPowersaveLevel')
+        this._machine.setPsState(new PsBelowPowersave(this._machine, time, tick));
+    else {
+        console.error(time, tick, message);
+        throw new Error(`lost power supply message in ${this.name} state. got ${event}`);
     }
+}
 
-    this._lastTime = thisTime;
+PsBelowPowersave.prototype.putLine = function(time, tick, message) {
+    const { action, event } = detectPowerSupplyEvent(message);
 
-    if (powerCycleCompleted) {
-        const powerDownDuration = shutdownEndTime >= this._powerDownStartTime
-            ? shutdownEndTime - this._powerDownStartTime
-            : 2**32 - this._powerDownStartTime + shutdownEndTime;
-
-        this._machine.completePowerCycle({
-            /* lno range of this power cycle.
-             */
-            lnoFirst: this._lnoFirst,
-            lnoLast: this._lnoLast,
-            
-            coldStart: this._coldStart,
-
-            /* time info
-             */
-            powerOnTime: this._powerOnTime,
-            lastTime: this._lastTime,
-            powerDownStartTime: this._powerDownStartTime,
-            powerDownDuration,
-
-            lastPowerState: this._lastPowerStateMaster,
-        });
-        this._machine.setState(nextState);
-        return;
+    if (action != 'send') return;
+    
+    if (event == 'PowerBelowShutdownLevel') {
+        this._machine.setPsState(new PsBelowShutdown(this._machine), time, tick);
+        this._machine.setPowerDownTime(this._powerDownTime);
+    } else if (event == 'PowerAboveStartupLevel')
+        this._machine.setPsState(new PsAboveStartup(this._machine), time, tick);
+    else {
+        console.error(time, tick, message);
+        throw new Error(`lost power supply message in ${this.name} state. got ${event}`);
     }
+}
 
-    this._detectPowerState(line);
+PsBelowShutdown.prototype.putLine = function(time, tick, message) {
+    const { action, event } = detectPowerSupplyEvent(message);
 
-    if (line.search('handle PowerBelowPowersaveLevel') >= 0
-        || line.search('handle PowerBelowShutdownLevel') >= 0
-        || line.search('handlePowerAboveStartupLevel') >= 0
-        || line.search('handle PowerAboveStartupLevel') >= 0) {
-        const words = line.split(/\s+/);
-        this._powerDownStartTime = parseInt(parseFloat(words[1]) * 1000);
-    }
+    if (action == 'send' && event == 'PowerAboveStartupLevel')
+        this._machine.setPsState(new PsAboveStartup(this._machine), time, tick);
+}
 
-    if (line.search('logging stopped') >= 0
-        || line.search('assertion failed') >= 0
-        || line.search('watchdog triggered') >= 0) {
-        this._machine.putInvalidPowerCycle({
-            /* lno range of this power cycle.
-             */
-            lnoFirst: this._lnoFirst,
-            lnoLast: this._lnoLast,
-            line: line,
-        });
-        this._machine.setState(new WaitPowerUp(this._machine));
-    }
-};
-
-PowerOn.prototype._detectPowerState = function(line) {
-    const regexp = /enter PowerStateMaster(.*)/;
-    const m = line.match(regexp);
-    if (m) {
-        this._lastPowerStateMaster = m[1];
-        return;
-    }
-
-    if (line.search('enter normal-operation') >= 0)
-        this._lastPowerStateMaster = 'normal-operation';
-    else if (line.search('enter infr-ready') >= 0)
-        this._lastPowerStateMaster = 'infr-ready';
-};
+/*===========================================================================*/
 
 function LogParser()
 {
+    this._pscmState = new PscmWaitStart(this);
+    this._psState = new PsUnknown(this);
+
     this._lineCount = 0;
-    this._state = new WaitPowerUp(this);
-    this._powerCycles = [];
-    this._invalidPowerCycles = [];
     this._maxLines = 0;
+
+    this._powerCycle = { events: [], currPscm: null };
+    this._powerCycles = [];
+
+    /* When this is false, the log message is incompleted, should
+     * not use them to report errors.
+     */
+    this._systemStarted = true;
 }
 
-LogParser.prototype.setMaxLines = function(n) {
-    this._maxLines = n;
+LogParser.prototype.setPscmState = function(s) {
+    console.log(`pscm state trans: ${this._pscmState.name} -> ${s.name}`);
+    this._pscmState = s;
+    if (s.onEnter) s.onEnter();
 };
 
-LogParser.prototype.setState = function(s) {
-    this._state = s;
+LogParser.prototype.setPsState = function(s) {
+    console.log(`ps state trans: ${this._psState.name} -> ${s.name}`);
+    this._psState = s;
 };
 
 LogParser.prototype.putLine = function(line) {
@@ -152,66 +246,85 @@ LogParser.prototype.putLine = function(line) {
         return;
     ++this._lineCount;
     if (line.search('bad format') >= 0) return;
-    this._state.putLine(line, this._lineCount);
+
+    const { time, tick, message } = parseTimeAndTick(line);
+    this._pscmState.putLine(time, tick, message, this._lineCount);
+
+    if (this.getSystemStarted())
+        this._psState.putLine(time, tick, message);
 };
 
-LogParser.prototype.completePowerCycle = function(powerCycle) {
-    if (! powerCycle.coldStart)
-        this._powerCycles.push(powerCycle);
-    else
-        console.log('dropped cold-start power cycle');
+LogParser.prototype.sendEvent = function(e) {
+    this._powerCycle.events.push(e);
 };
 
-LogParser.prototype.putInvalidPowerCycle = function(powerCycle) {
-    this._invalidPowerCycles.push(powerCycle);
+LogParser.prototype.setSystemStarted = function(s) {
+    this._systemStarted = true;
+};
+
+LogParser.prototype.getSystemStarted = function() {
+    return this._systemStarted;
+};
+
+LogParser.prototype.completePowerCycle = function() {
+    this._powerCycles.push(this._powerCycle);
+    this._powerCycle = { events: [] };
+};
+
+LogParser.prototype.setMaxLines = function(n) {
+    this._maxLines = n;
+};
+
+LogParser.prototype.setPowerDownTime = function({ time, tick }) {
+    this._powerDownTime = { time, tick };
 };
 
 LogParser.prototype.report = function(datasetName, rScript) {
-    console.log(`Analyzed ${this._powerCycles.length} power cycles:\n`);
+    console.log(`encountered ${this._powerCycles.length} power cycles:\n`);
 
-    const types = {};
-    for (const c of this._powerCycles) {
-        if (types[c.lastPowerState] === undefined)
-            types[c.lastPowerState] = [c];
-        else
-            types[c.lastPowerState].push(c);
-    }
+    //const types = {};
+    //for (const c of this._powerCycles) {
+    //    if (types[c.lastPowerState] === undefined)
+    //        types[c.lastPowerState] = [c];
+    //    else
+    //        types[c.lastPowerState].push(c);
+    //}
 
-    for (const t in types) {
-        const powerCycles = types[t];
-        const powerDownMin = Math.min.apply(Math, powerCycles.map(o => o.powerDownDuration));
-        const powerDownMax = Math.max.apply(Math, powerCycles.map(o => o.powerDownDuration));
-        console.log(`  power down after ${t}: ${powerCycles.length};`
-            + ` shutdown time min ${(powerDownMin / 1000).toFixed(3)}`
-            + ` max ${(powerDownMax / 1000).toFixed(3)}`);
-    }
+    //for (const t in types) {
+    //    const powerCycles = types[t];
+    //    const powerDownMin = Math.min.apply(Math, powerCycles.map(o => o.powerDownDuration));
+    //    const powerDownMax = Math.max.apply(Math, powerCycles.map(o => o.powerDownDuration));
+    //    console.log(`  power down after ${t}: ${powerCycles.length};`
+    //        + ` shutdown time min ${(powerDownMin / 1000).toFixed(3)}`
+    //        + ` max ${(powerDownMax / 1000).toFixed(3)}`);
+    //}
 
-    console.log('\n${this._invalidPowerCycles.length} Invalid power cycles:');
-    for (const c of this._invalidPowerCycles)
-        console.log(`  [${c.lnoFirst}, ${c.lnoLast}]: ${c.line}`);
+    //console.log('\n${this._invalidPowerCycles.length} Invalid power cycles:');
+    //for (const c of this._invalidPowerCycles)
+    //    console.log(`  [${c.lnoFirst}, ${c.lnoLast}]: ${c.line}`);
 
-    if (! rScript) return;
+    //if (! rScript) return;
 
-    const tmpDir = tmpdir();
-    const csvName = path.join(tmpDir
-        , `${crypto.randomBytes(6).readUIntBE(0, 6).toString(36)}.csv`);
-    const outputName = path.join(tmpDir, `${datasetName}.png`)
-    const os = fs.createWriteStream(csvName);
-    os.write('PowerDownStartTime,PowerDownUsedTime,StateWhenPowerDown\n');
-    for (const c of this._powerCycles) {
-        var t = c.powerDownStartTime;
-        if (t < TICK_START_VALUE)
-            t += 2**32 - TICK_START_VALUE;
-        else
-            t -= TICK_START_VALUE;
-        os.write(`${t/1000},${c.powerDownDuration/1000},${c.lastPowerState}\n`);
-    }
-    os.end();
-    exec(`Rscript ${rScript} --csv ${csvName} --out ${outputName}`
-        , (err, stdout, stderr) => {
-            if (err) throw new Error(err);
-            console.log(`saved ${outputName}`);
-        });
+    //const tmpDir = tmpdir();
+    //const csvName = path.join(tmpDir
+    //    , `${crypto.randomBytes(6).readUIntBE(0, 6).toString(36)}.csv`);
+    //const outputName = path.join(tmpDir, `${datasetName}.png`)
+    //const os = fs.createWriteStream(csvName);
+    //os.write('PowerDownStartTime,PowerDownUsedTime,StateWhenPowerDown\n');
+    //for (const c of this._powerCycles) {
+    //    var t = c.powerDownStartTime;
+    //    if (t < TICK_START_VALUE)
+    //        t += 2**32 - TICK_START_VALUE;
+    //    else
+    //        t -= TICK_START_VALUE;
+    //    os.write(`${t/1000},${c.powerDownDuration/1000},${c.lastPowerState}\n`);
+    //}
+    //os.end();
+    //exec(`Rscript ${rScript} --csv ${csvName} --out ${outputName}`
+    //    , (err, stdout, stderr) => {
+    //        if (err) throw new Error(err);
+    //        console.log(`saved ${outputName}`);
+    //    });
 };
 
 function stat(argv)
