@@ -33,9 +33,10 @@ function tickDiff(from, to)
     return (to + (mod - from)) % mod;
 }
 
-function tickToSecs(tick)
+function tickToTimeOffset(tick)
 {
-    return (tick/1000).toFixed(3);
+    const offset = tickDiff(0xfffc0000, tick);
+    return (offset/1000).toFixed(3);
 }
 
 /*===========================================================================*/
@@ -81,6 +82,7 @@ function SystemStart(machine, time, tick, lno, coldStart)
     this._machine = machine;
     this._machine.sendEvent( { name: 'start', time, tick, lno });
     this._machine.setSystemStarted();
+    this._machine.setColdStart(coldStart);
 }
 
 function PscmWakeup(machine, time, tick, lno)
@@ -282,12 +284,10 @@ PsBelowPowersave.prototype.putLine = function(time, tick, message, lno) {
 
     if (action != 'send') return;
     
-    if (event == 'PowerBelowShutdownLevel') {
+    if (event == 'PowerBelowShutdownLevel')
         this._machine.setPsState(new PsBelowShutdown(this._machine, time, tick, lno));
-    } else if (event == 'PowerAboveStartupLevel') {
-        this._machine.clearPowerDownFiredEvent();
+    else if (event == 'PowerAboveStartupLevel')
         this._machine.setPsState(new PsAboveStartup(this._machine, time, tick, lno));
-    }
     else {
         console.error(time, tick, message);
         throw new Error(`lost power supply message in ${this.name} state. got ${event}`);
@@ -321,6 +321,7 @@ function LogParser(csvOutStream)
 LogParser.prototype._renewPowerCycle = function() {
     this._pscmState = new PscmWaitStart(this);
     this._psState = new PsUnknown(this);
+    this._coldStart = false;
 
     this._powerCycle = { events: [] };
 
@@ -387,7 +388,7 @@ LogParser.prototype.completePowerCycle = function() {
             = this._powerDownFiredEvent;
 
     if (! this._nPowerCycles)
-        this._csv.write('Lno,PowerCycleLnoFrom,PowerCycleLnoTo,'
+        this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
             + 'WakeupTime,ResetTime,'
             + 'PowerDownStartTime,PowerDownDispatchedTime,CapacitorTime,'
             + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatched,'
@@ -408,18 +409,19 @@ LogParser.prototype.completePowerCycle = function() {
     if (tickFrom === null) throw new Error('no wakeup');
     const tickTo = this._powerCycle.events.slice(-1)[0].tick;
 
-    this._csv.write(`${this._nPowerCycles + 1},`
-        + `${this._powerCycle.events[0].lno},`
-        + `${this._powerCycle.events.slice(-1)[0].lno},`
-        + `${tickToSecs(tickFrom)},`
-        + `${tickToSecs(tickTo)},`
-        + `${tickToSecs(this._powerDownFiredEvent.tick)},`
-        + `${tickToSecs(this._powerDownDispatchedEvent.tick)},`
-        + `${tickToSecs(tickDiff(this._powerDownFiredEvent.tick, tickTo))},`
-        + `${this._powerDownFiredEvent.pscm},`
-        + `${this._powerDownDispatchedEvent.pscm},`
-        + `${tickToSecs(this._ubiTimeCalc.getStopUbiDuration())}\n`
-    );
+    if (! this._coldStart)
+        this._csv.write(`${this._nPowerCycles + 1},`
+            + `${this._powerCycle.events[0].lno},`
+            + `${this._powerCycle.events.slice(-1)[0].lno},`
+            + `${tickToTimeOffset(tickFrom)},`
+            + `${tickToTimeOffset(tickTo)},`
+            + `${tickToTimeOffset(this._powerDownFiredEvent.tick)},`
+            + `${tickToTimeOffset(this._powerDownDispatchedEvent.tick)},`
+            + `${tickDiff(this._powerDownFiredEvent.tick, tickTo)/1000 .toFixed(3)},`
+            + `${this._powerDownFiredEvent.pscm},`
+            + `${this._powerDownDispatchedEvent.pscm},`
+            + `${this._ubiTimeCalc.getStopUbiDuration()/1000 .toFixed(3)}\n`
+        );
 
     ++this._nPowerCycles;
     if (verbose) console.log(`power cycle #${this._nPowerCycles} end`);
@@ -440,6 +442,10 @@ LogParser.prototype.clearPowerDownFiredEvent = function() {
 
 LogParser.prototype.setPowerDownDispatchedEvent = function({ time, tick, lno }) {
     this._powerDownDispatchedEvent = { time, tick, lno, pscm: this._pscmState.name };
+};
+
+LogParser.prototype.setColdStart = function(coldStart) {
+    this._coldStart = coldStart;
 };
 
 LogParser.prototype.report = function(datasetName, rScript) {
@@ -492,8 +498,9 @@ LogParser.prototype.report = function(datasetName, rScript) {
 
 function stat(argv)
 {
+    const dataName = 'stat';
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
-    const csvStream = fs.createWriteStream('stat.csv');
+    const csvStream = fs.createWriteStream(`${dataName}.csv`);
     const parser = new LogParser(csvStream);
     if (argv.maxLines !== undefined) parser.setMaxLines(argv.maxLines);
 
@@ -504,8 +511,12 @@ function stat(argv)
     });
     rl.on('close', () => {
         csvStream.end();
-        //parser.report(path.basename(argv.file).split('.').slice(0, -1).join('.')
-        //    , argv.plot);
+        console.log(`saved ${dataName}.csv`);
+        exec(`Rscript ${argv.plot} --csv ${dataName}.csv --out ${dataName}.png`
+            , (err, stdout, stderr) => {
+                if (err) throw new Error(err);
+                console.log(`saved stat.png`);
+            });
     });
 }
 
