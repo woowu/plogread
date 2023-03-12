@@ -277,11 +277,6 @@ PsAboveStartup.prototype.putLine = function(time, tick, message, lno) {
 PsBelowPowersave.prototype.putLine = function(time, tick, message, lno) {
     const { action, event } = detectPowerSupplyEvent(message);
 
-    if (action == 'dispatch' && event == 'PowerBelowPowersaveLevel') {
-        this._machine.setPowerDownDispatchedEvent({ time, tick, lno });
-        return;
-    }
-
     if (action != 'send') return;
     
     if (event == 'PowerBelowShutdownLevel')
@@ -297,13 +292,49 @@ PsBelowPowersave.prototype.putLine = function(time, tick, message, lno) {
 PsBelowShutdown.prototype.putLine = function(time, tick, message, lno) {
     const { action, event } = detectPowerSupplyEvent(message);
 
-    if (action == 'dispatch' && event == 'PowerBelowPowersaveLevel') {
-        this._machine.setPowerDownDispatchedEvent({ time, tick, lno });
+    if (action == 'send' && event == 'PowerAboveStartupLevel')
+        this._machine.setPsState(new PsAboveStartup(this._machine, time, tick, lno));
+}
+
+/*===========================================================================*/
+
+function PowerDownDispatchTimeDetector(machine)
+{
+    this.dispatchEvent = null;
+    this._machine = machine;
+}
+
+PowerDownDispatchTimeDetector.prototype.putLine = function(time, tick, message, lno) {
+    const fireEvent = this._machine.getPowerDownFiredEvent();
+    if (! fireEvent) return;
+    if (this.dispatchEvent && tickDiff(fireEvent.tick, this.dispatchEvent.tick) < 2**31) return;
+
+    const { action, event } = detectPowerSupplyEvent(message);
+
+    /* When a PSCM state peaks into the power supply state, the
+     * below-power-save event may not be dispatched, but we can get the clue
+     * from the PSCM said it started to handle the powersave or power down
+     * situation.
+     */
+    if (message.search('handle PowerBelow') >= 0) {
+        this.dispatchEvent = {
+            time,
+            tick,
+            lno,
+            pscm: this._machine.getPscmState().name,
+        };
         return;
     }
 
-    if (action == 'send' && event == 'PowerAboveStartupLevel')
-        this._machine.setPsState(new PsAboveStartup(this._machine, time, tick, lno));
+    if (action == 'dispatch' && event == 'PowerBelowPowersaveLevel') {
+        this.dispatchEvent = {
+            time,
+            tick,
+            lno,
+            pscm: this._machine.getPscmState().name,
+        };
+        return;
+    }
 }
 
 /*===========================================================================*/
@@ -321,6 +352,7 @@ function LogParser(csvOutStream)
 LogParser.prototype._renewPowerCycle = function() {
     this._pscmState = new PscmWaitStart(this);
     this._psState = new PsUnknown(this);
+    this._powerDownDispatchTimeDetector = new PowerDownDispatchTimeDetector(this);
     this._coldStart = false;
 
     this._powerCycle = { events: [] };
@@ -331,19 +363,25 @@ LogParser.prototype._renewPowerCycle = function() {
     this._systemStarted = false;
 
     this._powerDownFiredEvent = null;
-    this._powerDownDispatchedEvent = null;
+    this._powerDownDispatchEvent = null;
 
     this._ubiTimeCalc = new UbiTimeCalc();
 }
 
 LogParser.prototype.setPscmState = function(s) {
-    console.log(`${s._lno}: pscm state trans: ${this._pscmState.name} -> ${s.name}`);
+    console.log(`${s._lno}: ${tickToTimeOffset(s._tick)}`
+        + ` pscm trans: ${this._pscmState.name} -> ${s.name}`);
     this._pscmState = s;
     if (s.onEnter) s.onEnter();
 };
 
+LogParser.prototype.getPscmState = function() {
+    return this._pscmState;
+};
+
 LogParser.prototype.setPsState = function(s) {
-    console.log(`${s._lno}: ps state trans: ${this._psState.name} -> ${s.name}`);
+    console.log(`${s._lno}: ${tickToTimeOffset(s._tick)}`
+        + ` ps trans: ${this._psState.name} -> ${s.name}`);
     this._psState = s;
 };
 
@@ -361,6 +399,7 @@ LogParser.prototype.putLine = function(line) {
     if (this.getSystemStarted()) {
         this._psState.putLine(time, tick, message, this._lno);
         this._ubiTimeCalc.putLine(time, tick, message, this._lno);
+        this._powerDownDispatchTimeDetector.putLine(time, tick, message, this._lno);
     }
 };
 
@@ -377,22 +416,27 @@ LogParser.prototype.getSystemStarted = function() {
 };
 
 LogParser.prototype.completePowerCycle = function() {
-    /* When a PSCM state peaks into the power supply state,
-     * the below-power-save event may not be received from
-     * the queue.
-     */
-    if (! this._powerDownDispatchedEvent)
-        this._powerDownDispatchedEvent
-            = this._powerDownFiredEvent;
+    if (! this._powerDownDispatchTimeDetector.dispatchEvent) {
+        /* This happened when the on-mains state detected the power has down.
+         * There are still as short resp delay, but no log message can be used
+         * to detect that.
+         */
+        console.log('warn: no power down dispatch/handling message found');
+        this._powerDownDispatchEvent = this._powerDownFiredEvent;
+    } else
+        this._powerDownDispatchEvent = this._powerDownDispatchTimeDetector
+            .dispatchEvent;
 
-    if (! this._nPowerCycles)
-        this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
-            + 'WakeupTime,ResetTime,'
-            + 'PowerDownStartTime,PowerDownDispatchedTime,CapacitorTime,'
-            + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatched,'
-            + 'UbiStopTime\n'
-        );
+    const x = tickDiff(this._powerDownFiredEvent.tick, this._powerDownDispatchEvent.tick);
+    if (x < 0) console.log('zzz', x);
 
+    this._outputCurrPowerCycle();
+
+    ++this._nPowerCycles;
+    this._renewPowerCycle();
+};
+
+LogParser.prototype._outputCurrPowerCycle = function() {
     /* because there is the filter time, so the actual power down time is
      * earlier than the time the power supply supervisor sent below-pwersave
      * message.
@@ -407,6 +451,24 @@ LogParser.prototype.completePowerCycle = function() {
     if (tickFrom === null) throw new Error('no wakeup');
     const tickTo = this._powerCycle.events.slice(-1)[0].tick;
 
+    console.log(`power cycle #${this._nPowerCycles + 1} end.`
+        + ' capacitor time'
+        + ` ${tickDiff(this._powerDownFiredEvent.tick, tickTo)/1000 .toFixed(3)}s`
+        + ' shutdown time'
+        + ` ${tickDiff(this._powerDownDispatchEvent.tick, tickTo)/1000 .toFixed(3)}s`
+    );
+
+    if (! this._csv) return;
+
+    if (! this._nPowerCycles)
+        this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
+            + 'WakeupTime,ResetTime,'
+            + 'PowerDownStartTime,PowerDownDispatchTime,'
+            + 'CapacitorTime,ShutdownTime,UbiStopTime,'
+            + 'RespDelay,'
+            + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatch\n'
+        );
+
     if (! this._coldStart)
         this._csv.write(`${this._nPowerCycles + 1},`
             + `${this._powerCycle.events[0].lno},`
@@ -414,16 +476,14 @@ LogParser.prototype.completePowerCycle = function() {
             + `${tickToTimeOffset(tickFrom)},`
             + `${tickToTimeOffset(tickTo)},`
             + `${tickToTimeOffset(this._powerDownFiredEvent.tick)},`
-            + `${tickToTimeOffset(this._powerDownDispatchedEvent.tick)},`
+            + `${tickToTimeOffset(this._powerDownDispatchEvent.tick)},`
             + `${tickDiff(this._powerDownFiredEvent.tick, tickTo)/1000 .toFixed(3)},`
+            + `${tickDiff(this._powerDownDispatchEvent.tick, tickTo)/1000 .toFixed(3)},`
+            + `${this._ubiTimeCalc.getStopUbiDuration()/1000 .toFixed(3)},`
+            + `${tickDiff(this._powerDownFiredEvent.tick, this._powerDownDispatchEvent.tick)/1000 .toFixed(3)},`
             + `${this._powerDownFiredEvent.pscm},`
-            + `${this._powerDownDispatchedEvent.pscm},`
-            + `${this._ubiTimeCalc.getStopUbiDuration()/1000 .toFixed(3)}\n`
+            + `${this._powerDownDispatchEvent.pscm}\n`
         );
-
-    ++this._nPowerCycles;
-    if (verbose) console.log(`power cycle #${this._nPowerCycles} end`);
-    this._renewPowerCycle();
 };
 
 LogParser.prototype.setMaxLines = function(n) {
@@ -435,12 +495,13 @@ LogParser.prototype.setPowerDownFiredEvent = function({ time, tick, lno }) {
 };
 
 LogParser.prototype.clearPowerDownFiredEvent = function() {
+    console.log('qqq');
     this._powerDownFiredEvent = null;
 };
 
-LogParser.prototype.setPowerDownDispatchedEvent = function({ time, tick, lno }) {
-    this._powerDownDispatchedEvent = { time, tick, lno, pscm: this._pscmState.name };
-};
+LogParser.prototype.getPowerDownFiredEvent = function() {
+    return this._powerDownFiredEvent;
+}
 
 LogParser.prototype.setColdStart = function(coldStart) {
     this._coldStart = coldStart;
@@ -448,9 +509,13 @@ LogParser.prototype.setColdStart = function(coldStart) {
 
 function stat(argv)
 {
-    const dataName = 'stat';
+    const dataName = argv.dataName;
+    const rScript = argv.r;
+
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
-    const csvStream = fs.createWriteStream(`${dataName}.csv`);
+    var csvStream;
+    if (dataName)
+        csvStream = fs.createWriteStream(`${dataName}.csv`);
     const parser = new LogParser(csvStream);
     if (argv.maxLines !== undefined) parser.setMaxLines(argv.maxLines);
 
@@ -460,9 +525,11 @@ function stat(argv)
         parser.putLine(line);
     });
     rl.on('close', () => {
+        if (! csvStream) return;
+
         csvStream.end();
         console.log(`saved ${dataName}.csv`);
-        exec(`Rscript ${argv.plot} --csv ${dataName}.csv --out ${dataName}.png`
+        exec(`Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}.png`
             , (err, stdout, stderr) => {
                 if (err) throw new Error(err);
                 console.log(`saved stat.png`);
@@ -495,9 +562,15 @@ const argv = yargs(process.argv.slice(2))
        }
     )
     .command('stat', 'statistics', yargs => {
-            yargs.option('plot', {
-                alias: 'p',
+            yargs.option('rscript', {
+                alias: 'r',
                 describe: 'R script filename for plotting',
+                nargs: 1,
+                type: 'string',
+            });
+            yargs.option('data-name', {
+                alias: 'd',
+                describe: 'dataset name used to create csv and plot files',
                 nargs: 1,
                 type: 'string',
             });
