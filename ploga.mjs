@@ -337,15 +337,13 @@ LogParser.prototype._renewPowerCycle = function() {
 }
 
 LogParser.prototype.setPscmState = function(s) {
-    if (verbose)
-        console.log(`${s._lno}: pscm state trans: ${this._pscmState.name} -> ${s.name}`);
+    console.log(`${s._lno}: pscm state trans: ${this._pscmState.name} -> ${s.name}`);
     this._pscmState = s;
     if (s.onEnter) s.onEnter();
 };
 
 LogParser.prototype.setPsState = function(s) {
-    if (verbose)
-        console.log(`${s._lno}: ps state trans: ${this._psState.name} -> ${s.name}`);
+    console.log(`${s._lno}: ps state trans: ${this._psState.name} -> ${s.name}`);
     this._psState = s;
 };
 
@@ -446,54 +444,6 @@ LogParser.prototype.setPowerDownDispatchedEvent = function({ time, tick, lno }) 
 
 LogParser.prototype.setColdStart = function(coldStart) {
     this._coldStart = coldStart;
-};
-
-LogParser.prototype.report = function(datasetName, rScript) {
-    console.log(`processed ${this._nPowerCycles} power cycles`);
-
-    //const types = {};
-    //for (const c of this._powerCycles) {
-    //    if (types[c.lastPowerState] === undefined)
-    //        types[c.lastPowerState] = [c];
-    //    else
-    //        types[c.lastPowerState].push(c);
-    //}
-
-    //for (const t in types) {
-    //    const powerCycles = types[t];
-    //    const powerDownMin = Math.min.apply(Math, powerCycles.map(o => o.powerDownDuration));
-    //    const powerDownMax = Math.max.apply(Math, powerCycles.map(o => o.powerDownDuration));
-    //    console.log(`  power down after ${t}: ${powerCycles.length};`
-    //        + ` shutdown time min ${(powerDownMin / 1000).toFixed(3)}`
-    //        + ` max ${(powerDownMax / 1000).toFixed(3)}`);
-    //}
-
-    //console.log('\n${this._invalidPowerCycles.length} Invalid power cycles:');
-    //for (const c of this._invalidPowerCycles)
-    //    console.log(`  [${c.lnoFirst}, ${c.lnoLast}]: ${c.line}`);
-
-    //if (! rScript) return;
-
-    //const tmpDir = tmpdir();
-    //const csvName = path.join(tmpDir
-    //    , `${crypto.randomBytes(6).readUIntBE(0, 6).toString(36)}.csv`);
-    //const outputName = path.join(tmpDir, `${datasetName}.png`)
-    //const os = fs.createWriteStream(csvName);
-    //os.write('PowerDownStartTime,PowerDownUsedTime,StateWhenPowerDown\n');
-    //for (const c of this._powerCycles) {
-    //    var t = c.powerDownStartTime;
-    //    if (t < TICK_START_VALUE)
-    //        t += 2**32 - TICK_START_VALUE;
-    //    else
-    //        t -= TICK_START_VALUE;
-    //    os.write(`${t/1000},${c.powerDownDuration/1000},${c.lastPowerState}\n`);
-    //}
-    //os.end();
-    //exec(`Rscript ${rScript} --csv ${csvName} --out ${outputName}`
-    //    , (err, stdout, stderr) => {
-    //        if (err) throw new Error(err);
-    //        console.log(`saved ${outputName}`);
-    //    });
 };
 
 function stat(argv)
