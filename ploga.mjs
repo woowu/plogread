@@ -30,12 +30,17 @@ function parseTimeAndTick(logLine)
 function tickDiff(from, to)
 {
     const mod = 2**32;
-    return (to + (mod - from)) % mod;
+    var n = (to + (mod - from)) % mod;
+    if (n > 2**31) n -= mod;
+    return n;
 }
 
+/* Convert device RTOS tick time to time offset since the device started 
+ */
 function tickToTimeOffset(tick)
 {
-    const offset = tickDiff(0xfffc0000, tick);
+    const START_TICK = 0xfffc0000;
+    const offset = tickDiff(START_TICK, tick);
     return (offset/1000).toFixed(3);
 }
 
@@ -307,7 +312,7 @@ function PowerDownDispatchTimeDetector(machine)
 PowerDownDispatchTimeDetector.prototype.putLine = function(time, tick, message, lno) {
     const fireEvent = this._machine.getPowerDownFiredEvent();
     if (! fireEvent) return;
-    if (this.dispatchEvent && tickDiff(fireEvent.tick, this.dispatchEvent.tick) < 2**31) return;
+    if (this.dispatchEvent && tickDiff(fireEvent.tick, this.dispatchEvent.tick) >= 0) return;
 
     const { action, event } = detectPowerSupplyEvent(message);
 
@@ -338,6 +343,31 @@ PowerDownDispatchTimeDetector.prototype.putLine = function(time, tick, message, 
 }
 
 /*===========================================================================*/
+function BackupTimeCalc(machine)
+{
+    this._machine = machine;
+    this.start = null;
+    this.end = null;
+}
+
+BackupTimeCalc.prototype.putLine = function(time, tick, message, lno) {
+    if (message.search(/StartupTask.*start shutdown/) >= 0) {
+        this.start = { time, tick, lno };
+        return;
+    }
+    if (message.search(/StartupTask.*backup: done/) >= 0) {
+        if (! this.start) throw new Error('missed start-shutdown');
+        this.end = { time, tick, lno };
+        return;
+    }
+    /* backup was skipeed */
+    if (! this.end && message.search(/StartupTask.*shutdown done/) >= 0) {
+        this.end = { time, tick, lno };
+        return;
+    }
+};
+
+/*===========================================================================*/
 
 function LogParser(csvOutStream)
 {
@@ -353,8 +383,9 @@ LogParser.prototype._renewPowerCycle = function() {
     this._pscmState = new PscmWaitStart(this);
     this._psState = new PsUnknown(this);
     this._powerDownDispatchTimeDetector = new PowerDownDispatchTimeDetector(this);
-    this._coldStart = false;
+    this._backupTimeCalc = new BackupTimeCalc(this);
 
+    this._coldStart = false;
     this._powerCycle = { events: [] };
 
     /* When this is false, the log message is incompleted, should
@@ -364,6 +395,8 @@ LogParser.prototype._renewPowerCycle = function() {
 
     this._powerDownFiredEvent = null;
     this._powerDownDispatchEvent = null;
+    this._backupStartEvent = null;
+    this._backupEndEvent = null;
 
     this._ubiTimeCalc = new UbiTimeCalc();
 }
@@ -400,6 +433,7 @@ LogParser.prototype.putLine = function(line) {
         this._psState.putLine(time, tick, message, this._lno);
         this._ubiTimeCalc.putLine(time, tick, message, this._lno);
         this._powerDownDispatchTimeDetector.putLine(time, tick, message, this._lno);
+        this._backupTimeCalc.putLine(time, tick, message, this._lno);
     }
 };
 
@@ -427,8 +461,10 @@ LogParser.prototype.completePowerCycle = function() {
         this._powerDownDispatchEvent = this._powerDownDispatchTimeDetector
             .dispatchEvent;
 
-    const x = tickDiff(this._powerDownFiredEvent.tick, this._powerDownDispatchEvent.tick);
-    if (x < 0) console.log('zzz', x);
+    if (this._backupTimeCalc.start && ! this._backupTimeCalc.end)
+        throw new Error('incompleted backup');
+    this._backupStartEvent = this._backupTimeCalc.start;
+    this._backupEndEvent = this._backupTimeCalc.end;
 
     this._outputCurrPowerCycle();
 
@@ -460,11 +496,15 @@ LogParser.prototype._outputCurrPowerCycle = function() {
 
     if (! this._csv) return;
 
+    var backupTime = 0;
+    if (this._backupStartEvent)
+        backupTime = tickDiff(this._backupStartEvent.tick, this._backupEndEvent.tick);
+
     if (! this._nPowerCycles)
         this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
             + 'WakeupTime,ResetTime,'
             + 'PowerDownStartTime,PowerDownDispatchTime,'
-            + 'CapacitorTime,ShutdownTime,UbiStopTime,'
+            + 'CapacitorTime,ShutdownTime,BackupTime,UbiStopTime,'
             + 'RespDelay,'
             + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatch\n'
         );
@@ -479,6 +519,7 @@ LogParser.prototype._outputCurrPowerCycle = function() {
             + `${tickToTimeOffset(this._powerDownDispatchEvent.tick)},`
             + `${tickDiff(this._powerDownFiredEvent.tick, tickTo)/1000 .toFixed(3)},`
             + `${tickDiff(this._powerDownDispatchEvent.tick, tickTo)/1000 .toFixed(3)},`
+            + `${backupTime/1000 .toFixed(3)},`
             + `${this._ubiTimeCalc.getStopUbiDuration()/1000 .toFixed(3)},`
             + `${tickDiff(this._powerDownFiredEvent.tick, this._powerDownDispatchEvent.tick)/1000 .toFixed(3)},`
             + `${this._powerDownFiredEvent.pscm},`
@@ -532,7 +573,12 @@ function stat(argv)
         exec(`Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}.png`
             , (err, stdout, stderr) => {
                 if (err) throw new Error(err);
-                console.log(`saved stat.png`);
+                console.log(`saved ${dataName}.png`);
+            });
+        exec(`Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}.pdf`
+            , (err, stdout, stderr) => {
+                if (err) throw new Error(err);
+                console.log(`saved ${dataName}.pdf`);
             });
     });
 }
