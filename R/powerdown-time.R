@@ -13,20 +13,6 @@ option_list <- list(
 opts <- parse_args(OptionParser(option_list=option_list))
 data <- read.csv(opts$csv_filename);
 
-backupDone <- data %>% filter(StateWhenPowerDownDetected == 'normal-opr') %>% select(BackupTime, RespDelay)
-ubiStopDone <- data %>% filter(StateWhenPowerDownDetected != 'on-mains') %>% select(UbiStopTime)
-print(paste0('number of samples: ', nrow(data)))
-print(paste0('capacitor data: max ', max(data$CapacitorTime),
-             ' mean ', mean(data$CapacitorTime)))
-print(paste0('response delay: max ', max(data$RespDelay),
-             ' mean ', mean(data$RespDelay)))
-print(paste0('response delay when backup will run: max ', max(backupDone$RespDelay),
-             ' mean ', mean(backupDone$RespDelay)))
-print(paste0('backup: max ', max(data$BackupTime),
-             ' mean ',mean(backupDone$BackupTime)))
-print(paste0('ubi: max ', max(data$UbiStopTime),
-             ' mean ',mean(ubiStopDone$UbiStopTime)))
-
 ymax <- max(data$CapacitorTime)
 n_samples <- nrow(data);
 
@@ -89,3 +75,17 @@ p <- plot_grid(title, caption, prow, legend, ncol = 1, rel_heights=c(.06, .03, .
 if (! is.null(opts$output_filename)) {
     ggsave(filename=opts$output_filename, p, width=12, height=12, bg = 'white');
 }
+
+backupDone <- data %>% filter(StateWhenPowerDownDetected == 'normal-opr') %>% select(BackupTime, RespDelay)
+ubiStopDone <- data %>% filter(StateWhenPowerDownDetected != 'on-mains') %>% select(UbiStopTime)
+print(paste0('number of samples: ', nrow(data)))
+print(paste0('capacitor data: max ', max(data$CapacitorTime),
+             ' mean ', mean(data$CapacitorTime)))
+print(paste0('response delay: max ', max(data$RespDelay),
+             ' mean ', mean(data$RespDelay)))
+print(paste0('response delay when backup will run: max ', max(backupDone$RespDelay),
+             ' mean ', mean(backupDone$RespDelay)))
+print(paste0('backup: max ', max(data$BackupTime),
+             ' mean ',mean(backupDone$BackupTime)))
+print(paste0('ubi: max ', max(data$UbiStopTime),
+             ' mean ',mean(ubiStopDone$UbiStopTime)))

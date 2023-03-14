@@ -1,12 +1,14 @@
 #!/usr/bin/node --harmony
 
 import { tmpdir } from 'node:os';
+import util from 'node:util';
 import path from 'node:path';
 import { exec } from 'node:child_process';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
 import yargs from 'yargs/yargs';
 import fs from 'node:fs';
+const execp = util.promisify(exec);
 
 const TICK_START_VALUE = 0xfffc0000;
 var verbose = false;
@@ -548,7 +550,7 @@ LogParser.prototype.setColdStart = function(coldStart) {
     this._coldStart = coldStart;
 };
 
-function stat(argv)
+async function stat(argv)
 {
     const dataName = argv.dataName;
     const rScript = argv.r;
@@ -565,21 +567,19 @@ function stat(argv)
     rl.on('line', line => {
         parser.putLine(line);
     });
-    rl.on('close', () => {
+    rl.on('close', async () => {
         if (! csvStream) return;
 
         csvStream.end();
         console.log(`saved ${dataName}.csv`);
-        exec(`Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}.png`
-            , (err, stdout, stderr) => {
-                if (err) throw new Error(err);
-                console.log(`saved ${dataName}.png`);
-            });
-        exec(`Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}.pdf`
-            , (err, stdout, stderr) => {
-                if (err) throw new Error(err);
-                console.log(`saved ${dataName}.pdf`);
-            });
+
+        for (const format of ['png', 'pdf']) {
+            const { stdout, stderr } = await execp(
+                `Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}-analysis.${format}`);
+            if (stderr) console.error(stderr);
+            console.log(stdout);
+            console.log(`saved ${dataName}-analysis.${format}`);
+        }
     });
 }
 
