@@ -8,12 +8,26 @@ import crypto from 'node:crypto';
 import readline from 'node:readline';
 import yargs from 'yargs/yargs';
 import fs from 'node:fs';
+import moment from 'moment';
 const execp = util.promisify(exec);
 
 const TICK_START_VALUE = 0xfffc0000;
 var verbose = false;
 
 /*===========================================================================*/
+
+function getTimeZoneSuffix()
+{
+    var sign = '+';
+    var offset = new Date().getTimezoneOffset();
+    if (offset < 0)
+        offset *= -1;
+    else
+        offset = '-';
+    const h = parseInt(min / 60).toString().padStart(2, '0');
+    const m = (min % 60).toString().padStart(2, '0');
+    return `${sign}${h}${m}`;
+}
 
 function parseTimeAndTick(logLine)
 {
@@ -475,14 +489,12 @@ LogParser.prototype.completePowerCycle = function() {
 };
 
 LogParser.prototype._outputCurrPowerCycle = function() {
-    /* because there is the filter time, so the actual power down time is
-     * earlier than the time the power supply supervisor sent below-pwersave
-     * message.
-     */
     var tickFrom = null;
+    var timeFrom = null;
     for (const e of this._powerCycle.events) {
         if (e.name == 'wakeup') {
             tickFrom = e.tick;
+            timeFrom = e.time;
             break;
         }
     }
@@ -504,6 +516,8 @@ LogParser.prototype._outputCurrPowerCycle = function() {
 
     if (! this._nPowerCycles)
         this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
+            + 'WakeupRealTime,WakeupMiliSecs,'
+            + 'PowerDownRealTime,PowerDownMiliSecs,'
             + 'WakeupTime,ResetTime,'
             + 'PowerDownStartTime,PowerDownDispatchTime,'
             + 'CapacitorTime,ShutdownTime,BackupTime,UbiStopTime,'
@@ -515,6 +529,11 @@ LogParser.prototype._outputCurrPowerCycle = function() {
         this._csv.write(`${this._nPowerCycles + 1},`
             + `${this._powerCycle.events[0].lno},`
             + `${this._powerCycle.events.slice(-1)[0].lno},`
+            + `${moment(timeFrom).format('YYYY-MM-DDTHH:mm:ss.SSSZ')},`
+            + `${timeFrom.valueOf()},`
+            + `${moment(this._powerDownFiredEvent.time).format('YYYY-MM-DDTHH:mm:ss.SSSZ')},`
+            + `${this._powerDownFiredEvent.time.valueOf()},`
+
             + `${tickToTimeOffset(tickFrom)},`
             + `${tickToTimeOffset(tickTo)},`
             + `${tickToTimeOffset(this._powerDownFiredEvent.tick)},`
@@ -574,11 +593,14 @@ async function stat(argv)
         console.log(`saved ${dataName}.csv`);
 
         for (const format of ['png', 'pdf']) {
-            const { stdout, stderr } = await execp(
-                `Rscript ${rScript} --csv ${dataName}.csv --out ${dataName}-analysis.${format}`);
+            const cmdline = `Rscript ${rScript} --csv ${dataName}.csv`
+                + ` --out-p ${dataName}-performance.${format}`
+                + ` --out-d ${dataName}-distribution.${format}`;
+            console.log(cmdline);
+            const { stdout, stderr } = await execp(cmdline);
             if (stderr) console.error(stderr);
             console.log(stdout);
-            console.log(`saved ${dataName}-analysis.${format}`);
+            console.log(`saved ${dataName}-performance-analysis.${format}`);
         }
     });
 }
