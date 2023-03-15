@@ -2,3 +2,6 @@ node_modules/
 Rplots.pdf
 log
 *.log
+*.png
+*.pdf
+*.csv
