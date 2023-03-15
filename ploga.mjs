@@ -20,19 +20,6 @@ var verbose = false;
 
 /*===========================================================================*/
 
-function getTimeZoneSuffix()
-{
-    var sign = '+';
-    var offset = new Date().getTimezoneOffset();
-    if (offset < 0)
-        offset *= -1;
-    else
-        offset = '-';
-    const h = parseInt(min / 60).toString().padStart(2, '0');
-    const m = (min % 60).toString().padStart(2, '0');
-    return `${sign}${h}${m}`;
-}
-
 function parseTimeAndTick(logLine)
 {
     const words = logLine.split(/\s+/);
