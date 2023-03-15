@@ -1,5 +1,6 @@
 #!/usr/bin/node --harmony
 
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import util from 'node:util';
 import path from 'node:path';
@@ -9,7 +10,10 @@ import readline from 'node:readline';
 import yargs from 'yargs/yargs';
 import fs from 'node:fs';
 import moment from 'moment';
+
 const execp = util.promisify(exec);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const statScript = path.join(__dirname, 'bin', 'stat');
 
 const TICK_START_VALUE = 0xfffc0000;
 var verbose = false;
@@ -572,7 +576,6 @@ LogParser.prototype.setColdStart = function(coldStart) {
 async function stat(argv)
 {
     const dataName = argv.dataName;
-    const rScript = argv.r;
 
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
     var csvStream;
@@ -592,16 +595,11 @@ async function stat(argv)
         csvStream.end();
         console.log(`saved ${dataName}.csv`);
 
-        for (const format of ['png', 'pdf']) {
-            const cmdline = `Rscript ${rScript} --csv ${dataName}.csv`
-                + ` --out-p ${dataName}-performance.${format}`
-                + ` --out-d ${dataName}-distribution.${format}`;
-            console.log(cmdline);
-            const { stdout, stderr } = await execp(cmdline);
-            if (stderr) console.error(stderr);
-            console.log(stdout);
-            console.log(`saved ${dataName}-performance-analysis.${format}`);
-        }
+        const cmdline = `${statScript} --data "${path.join(process.cwd(), dataName)}"`;
+        console.log(cmdline);
+        const { stdout, stderr } = await execp(cmdline);
+        if (stderr) console.error(stderr);
+        console.log(stdout);
     });
 }
 
@@ -641,6 +639,7 @@ const argv = yargs(process.argv.slice(2))
                 describe: 'dataset name used to create csv and plot files',
                 nargs: 1,
                 type: 'string',
+                default: 'stat',
             });
         },
         stat,
