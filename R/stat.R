@@ -5,17 +5,16 @@ library(ggplot2)
 library(cowplot)
 
 option_list <- list(
+                    make_option(c('--dir'), dest='dir', help='data files directory'),
                     make_option(c('--data'), dest='data_name', help='dataset name')
                     )
 opts <- parse_args(OptionParser(option_list=option_list));
 data_name <- opts$data_name;
-csv_filename <- paste0(data_name, '.csv');
-print(csv_filename);
-time_polt_png_name <- paste0(data_name, '-times.png');
-time_polt_pdf_name <- paste0(data_name, '-times.pdf');
-distri_polt_png_name <- paste0(data_name, '-distribution.png');
-distri_polt_pdf_name <- paste0(data_name, '-distribution.pdf');
-
+csv_filename <- file.path(opts$dir, paste0(data_name, '.csv'));
+time_polt_png_name <- file.path(opts$dir, paste0(data_name, '-times.png'));
+time_polt_pdf_name <- file.path(opts$dir, paste0(data_name, '-times.pdf'));
+distri_polt_png_name <- file.path(opts$dir, paste0(data_name, '-distribution.png'));
+distri_polt_pdf_name <- file.path(opts$dir, paste0(data_name, '-distribution.pdf'));
 
 #------------------------------------------------------------------------------
 # prepare and manipulate data

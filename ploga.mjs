@@ -595,7 +595,7 @@ async function stat(argv)
         csvStream.end();
         console.log(`saved ${dataName}.csv`);
 
-        const cmdline = `${statScript} --data "${path.join(process.cwd(), dataName)}"`;
+        const cmdline = `${statScript} --dir ${process.cwd()} --data "${dataName}"`;
         console.log(cmdline);
         const { stdout, stderr } = await execp(cmdline);
         if (stderr) console.error(stderr);
