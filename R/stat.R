@@ -41,7 +41,7 @@ print(paste0('backup: max ', max(data$BackupTime),
              ' mean ',mean(backupDone$BackupTime)))
 print(paste0('ubi: max ', max(data$UbiStopTime),
              ' mean ',mean(ubiStopDone$UbiStopTime)))
-plot_property <- function(y_col, title, ylab = NULL) {
+plot_times_props <- function(y_col, title, ylab = NULL) {
     ggplot(data = data, aes(x = PowerDownStartTime, y = y_col
                                   , color=StateWhenPowerDownDispatch)) +
         geom_point() +
@@ -59,17 +59,17 @@ plot_property <- function(y_col, title, ylab = NULL) {
 #------------------------------------------------------------------------------
 # times plots
 
-perf_capacitor <- plot_property(data$CapacitorTime, 'A. Capacitor time\n(pwr-down to reset)', 'secs');
-perf_shutdown  <- plot_property(data$ShutdownTime, 'B. Shutdown time\n(handle pwr-down to reset)');
-perf_backup  <- plot_property(data$BackupTime, 'C. Backup time\n(stop tasks and save rambackup)');
-perf_ubi  <- plot_property(data$UbiStopTime, 'D. Stop UBI\n(stop UBI and save cache)');
-perf_resp_delay <- plot_property(data$RespDelay, 'E. Resp. delay\n(pwr-down to start of handling)');
+times_capacitor <- plot_times_props(data$CapacitorTime, 'A. Capacitor time\n(pwr-down to reset)', 'secs');
+times_shutdown  <- plot_times_props(data$ShutdownTime, 'B. Shutdown time\n(handle pwr-down to reset)');
+times_backup  <- plot_times_props(data$BackupTime, 'C. Backup time\n(stop tasks and save rambackup)');
+times_ubi  <- plot_times_props(data$UbiStopTime, 'D. Stop UBI\n(stop UBI and save cache)');
+times_resp_delay <- plot_times_props(data$RespDelay, 'E. Resp. delay\n(pwr-down to start of handling)');
 
-prow <- plot_grid(perf_capacitor + theme(legend.position = 'none'),
-               perf_shutdown + theme(legend.position = 'none'),
-               perf_backup + theme(legend.position = 'none'),
-               perf_ubi + theme(legend.position = 'none'),
-               perf_resp_delay + theme(legend.position = 'none'),
+prow <- plot_grid(times_capacitor + theme(legend.position = 'none'),
+               times_shutdown + theme(legend.position = 'none'),
+               times_backup + theme(legend.position = 'none'),
+               times_ubi + theme(legend.position = 'none'),
+               times_resp_delay + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
                vjust = 1,
@@ -80,7 +80,7 @@ prow <- plot_grid(perf_capacitor + theme(legend.position = 'none'),
 # Extract a shared legend and make it horizontal layout.
 #
 legend <- get_legend(
-    perf_capacitor + guides(color = guide_legend(nrow = 1)) +
+    times_capacitor + guides(color = guide_legend(nrow = 1)) +
     theme(legend.position = 'bottom', legend.title.align=1, legend.title = element_text(size=9))
 );
 
@@ -131,6 +131,11 @@ prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                nrow = 1
                );
 
+legend1 <- get_legend(
+    pdf_capacitor + guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = 'bottom', legend.title.align=1, legend.title = element_text(size=9))
+);
+
 # The extreme small time can contribute a very large portion of the whole
 # observations, if not exlude them, they will dominate the y-scale making the
 # more useful info almost impossible to be seen.
@@ -150,7 +155,7 @@ prow2 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                nrow = 1
                );
 
-legend <- get_legend(
+legend2 <- get_legend(
     pdf_capacitor + guides(color = guide_legend(nrow = 1)) +
     theme(legend.position = 'bottom', legend.title.align=1, legend.title = element_text(size=9))
 );
@@ -160,7 +165,7 @@ title <- ggdraw() +
              size = 18,
              x = 0, hjust = 0, vjust=1) +
   theme(plot.margin = margin(0, 0, 0, 7));
-p_distribution <- plot_grid(title, caption, prow1, prow2, legend, ncol = 1, rel_heights=c(.1, 0.05, .40, .40, .05));
+p_distribution <- plot_grid(title, caption, prow1, legend1, prow2, legend2, ncol = 1, rel_heights=c(.07, 0.03, .40, .05, .40, .05));
 
 ggsave(distri_polt_png_name, p_distribution, width=12, height=7, bg = 'white');
 print(paste0('saved', distri_polt_png_name));
