@@ -43,7 +43,7 @@ print(paste0('ubi: max ', max(data$UbiStopTime),
              ' mean ',mean(ubiStopDone$UbiStopTime)))
 plot_times_props <- function(y_col, title, ylab = NULL) {
     ggplot(data = data, aes(x = PowerDownStartTime, y = y_col
-                                  , color=StateWhenPowerDownDispatch)) +
+                                  , color=StateWhenPowerDownDispatched)) +
         geom_point() +
         ylim(0, ymax) +
         labs(title = title
@@ -87,7 +87,7 @@ legend <- get_legend(
 # Title for all the plots.
 #
 title <- ggdraw() +
-  draw_label(paste0(data_name, ' - times'),
+  draw_label(paste0(data_name, ' - Times'),
              size = 18,
              x = 0, hjust = 0, vjust = 1) +
   theme(plot.margin = margin(0, 0, 0, 7));
@@ -109,7 +109,7 @@ print(paste0('saved', time_polt_pdf_name));
 
 plot_pdf <- function(data, x_col, xlab, ylab = NULL) {
     ggplot(data = data, aes(x = .data[[x_col]], kernel = "epanechnikov",
-                            fill = StateWhenPowerDownDispatch)) +
+                            fill = StateWhenPowerDownDispatched)) +
         xlim(0, NA) +
         labs(x = xlab, y = ylab, fill = 'Shutdown handled in:') +
         geom_density(size = .1);
@@ -119,10 +119,14 @@ pdf_capacitor <- plot_pdf(data, 'CapacitorTime', 'Capacitor time', 'density');
 pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup');
 pdf_stop_ubi <- plot_pdf(data, 'UbiStopTime', 'Stop UBI');
 pdf_resp_delay <- plot_pdf(data, 'RespDelay', 'Resp. delay');
+pdf_start_ubi <- plot_pdf(data, 'UbiStartTime', 'Start UBI');
+pdf_normal_opr_startup <- plot_pdf(data, 'NormalOprStartupTime', 'Normal Startup');
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
+               pdf_start_ubi + theme(legend.position = 'none'),
                pdf_stop_ubi + theme(legend.position = 'none'),
+               pdf_normal_opr_startup + theme(legend.position = 'none'),
                pdf_resp_delay + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
@@ -143,10 +147,14 @@ pdf_capacitor <- plot_pdf(data %>% filter(CapacitorTime > 0.020), 'CapacitorTime
 pdf_backup <- plot_pdf(data %>% filter(BackupTime > 0.010), 'BackupTime', 'Backup > 0.010s');
 pdf_stop_ubi <- plot_pdf(data %>% filter(UbiStopTime > .010), 'UbiStopTime', 'Stop UBI > 0.010s');
 pdf_resp_delay <- plot_pdf(data %>% filter(RespDelay > 0.016), 'RespDelay', 'Resp. delay > 0.016s');
+pdf_start_ubi <- plot_pdf(data %>% filter(UbiStartTime > 0), 'UbiStartTime', 'Start UBI > 0s');
+pdf_normal_opr_startup <- plot_pdf(data %>% filter(NormalOprStartupTime > 0), 'NormalOprStartupTime', 'Normal Startup > 0');
 
 prow2 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
+               pdf_start_ubi + theme(legend.position = 'none'),
                pdf_stop_ubi + theme(legend.position = 'none'),
+               pdf_normal_opr_startup + theme(legend.position = 'none'),
                pdf_resp_delay + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
@@ -161,7 +169,7 @@ legend2 <- get_legend(
 );
 
 title <- ggdraw() +
-  draw_label(paste0(data_name, ' - time distribution'),
+  draw_label(paste0(data_name, ' - Time distribution'),
              size = 18,
              x = 0, hjust = 0, vjust=1) +
   theme(plot.margin = margin(0, 0, 0, 7));

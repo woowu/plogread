@@ -53,28 +53,81 @@ function tickToTimeOffset(tick)
 
 /*===========================================================================*/
 
-function UbiTimeCalc() {
-    this._stopUbiStarted = null;
-    this._stopUbiStopped = null;
+function NormalOprStartupTimeCalc() {
+    this._begin = null;
+    this._end = null;
 }
 
-UbiTimeCalc.prototype.putLine = function(time, tick, message, lno) {
-    if (! this._stopUbiStarted && message.search('stop file reader/writer') >= 0) {
-        this._stopUbiStarted = { time, tick, lno };
+NormalOprStartupTimeCalc.prototype.putLine = function(time, tick, message, lno) {
+    if (! this._begin && message.search('enter psm normal-operation') >= 0) {
+        this._begin = { time, tick, lno };
         return;
     }
-    if (this._stopUbiStarted && message.search('stop flash') >= 0) {
-        this._stopUbiStopped = { time, tick, lno };
+    if (this._begin && ! this._end && (message.search(' handle PowerAbove') >= 0
+        || message.search(' handle PowerBelow') >= 0)) {
+        this._end = { time, tick, lno };
         return;
     }
 };
 
-UbiTimeCalc.prototype.getStopUbiDuration = function() {
-    if (! this._stopUbiStarted && ! this._stopUbiStopped)
+NormalOprStartupTimeCalc.prototype.getDuration = function() {
+    if (! this._begin && ! this._end)
         return 0;
-    if (this._stopUbiStarted && ! this._stopUbiStopped)
+    if (this._begin && ! this._end)
+        throw new Error('normal-opr startup not finished?');
+    return tickDiff(this._begin.tick, this._end.tick);
+};
+
+/*===========================================================================*/
+
+function UbiStartTimeCalc() {
+    this._begin = null;
+    this._end = null;
+}
+
+UbiStartTimeCalc.prototype.putLine = function(time, tick, message, lno) {
+    if (this._begin && ! this._end && message.search('start UBI: done') >= 0) {
+        this._end = { time, tick, lno };
+        return;
+    }
+    if (! this._begin && message.search('start UBI') >= 0) {
+        this._begin = { time, tick, lno };
+        return;
+    }
+};
+
+UbiStartTimeCalc.prototype.getDuration = function() {
+    if (! this._begin && ! this._end)
+        return 0;
+    if (this._begin && ! this._end)
+        throw new Error('UBI start not finished?');
+    return tickDiff(this._begin.tick, this._end.tick);
+};
+
+/*===========================================================================*/
+
+function UbiStopTimeCalc() {
+    this._begin = null;
+    this._end = null;
+}
+
+UbiStopTimeCalc.prototype.putLine = function(time, tick, message, lno) {
+    if (! this._begin && message.search('stop file reader/writer') >= 0) {
+        this._begin = { time, tick, lno };
+        return;
+    }
+    if (this._begin && ! this._end && message.search('stop flash') >= 0) {
+        this._end = { time, tick, lno };
+        return;
+    }
+};
+
+UbiStopTimeCalc.prototype.getDuration = function() {
+    if (! this._begin && ! this._end)
+        return 0;
+    if (this._begin && ! this._end)
         throw new Error('UBI stop not finished?');
-    return tickDiff(this._stopUbiStarted.tick, this._stopUbiStopped.tick);
+    return tickDiff(this._begin.tick, this._end.tick);
 };
 
 /*===========================================================================*/
@@ -406,7 +459,9 @@ LogParser.prototype._renewPowerCycle = function() {
     this._backupStartEvent = null;
     this._backupEndEvent = null;
 
-    this._ubiTimeCalc = new UbiTimeCalc();
+    this._ubiStopTimeCalc = new UbiStopTimeCalc();
+    this._ubiStartTimeCalc = new UbiStartTimeCalc();
+    this._normalOprStartupTimeCalc = new NormalOprStartupTimeCalc();
 }
 
 LogParser.prototype.setPscmState = function(s) {
@@ -439,7 +494,9 @@ LogParser.prototype.putLine = function(line) {
 
     if (this.getSystemStarted()) {
         this._psState.putLine(time, tick, message, this._lno);
-        this._ubiTimeCalc.putLine(time, tick, message, this._lno);
+        this._ubiStartTimeCalc.putLine(time, tick, message, this._lno);
+        this._ubiStopTimeCalc.putLine(time, tick, message, this._lno);
+        this._normalOprStartupTimeCalc.putLine(time, tick, message, this._lno);
         this._powerDownDispatchTimeDetector.putLine(time, tick, message, this._lno);
         this._backupTimeCalc.putLine(time, tick, message, this._lno);
     }
@@ -519,9 +576,10 @@ LogParser.prototype._outputCurrPowerCycle = function() {
             + 'PowerDownRealTime,PowerDownMiliSecs,'
             + 'WakeupTime,ResetTime,'
             + 'PowerDownStartTime,PowerDownDispatchTime,'
-            + 'CapacitorTime,ShutdownTime,BackupTime,UbiStopTime,'
+            + 'CapacitorTime,ShutdownTime,BackupTime,'
+            + 'UbiStartTime,UbiStopTime,NormalOprStartupTime,'
             + 'RespDelay,'
-            + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatch\n'
+            + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatched\n'
         );
 
     if (! this._coldStart)
@@ -540,7 +598,9 @@ LogParser.prototype._outputCurrPowerCycle = function() {
             + `${tickDiff(this._powerDownFiredEvent.tick, tickTo)/1000 .toFixed(3)},`
             + `${tickDiff(this._powerDownDispatchEvent.tick, tickTo)/1000 .toFixed(3)},`
             + `${backupTime/1000 .toFixed(3)},`
-            + `${this._ubiTimeCalc.getStopUbiDuration()/1000 .toFixed(3)},`
+            + `${this._ubiStartTimeCalc.getDuration()/1000 .toFixed(3)},`
+            + `${this._ubiStopTimeCalc.getDuration()/1000 .toFixed(3)},`
+            + `${this._normalOprStartupTimeCalc.getDuration()/1000 .toFixed(3)},`
             + `${tickDiff(this._powerDownFiredEvent.tick, this._powerDownDispatchEvent.tick)/1000 .toFixed(3)},`
             + `${this._powerDownFiredEvent.pscm},`
             + `${this._powerDownDispatchEvent.pscm}\n`
