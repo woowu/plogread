@@ -574,7 +574,7 @@ async function stat(argv)
     const ignoredPowerCycles = [];
     if (argv.ignore && ! Array.isArray(argv.ignore))
         ignoredPowerCycles.push(argv.ignore);
-    else
+    else if (argv.ignore)
         ignoredPowerCycles.push(...argv.ignore);
 
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
@@ -594,6 +594,7 @@ async function stat(argv)
 
         csvStream.end();
         console.log(`saved ${dataName}.csv`);
+        if (argv.noPlot) return;
 
         const cmdline = `${statScript} --dir ${process.cwd()} --data "${dataName}"`;
         console.log(cmdline);
@@ -640,6 +641,11 @@ const argv = yargs(process.argv.slice(2))
                 describe: 'ignore specified power cycle',
                 nargs: 1,
                 type: 'number',
+            });
+            yargs.option('no-plot', {
+                alias: 'P',
+                describe: 'not to plot',
+                type: 'boolean',
             });
         },
         stat,
