@@ -376,12 +376,13 @@ BackupTimeCalc.prototype.putLine = function(time, tick, message, lno) {
 
 /*===========================================================================*/
 
-function LogParser(csvOutStream)
+function LogParser(csvOutStream, ignoreList)
 {
     this._lno = 0;
     this._maxLines = 0;
     this._nPowerCycles = 0;
     this._csv = csvOutStream;
+    this._ignoreList = ignoreList;
 
     this._renewPowerCycle();
 }
@@ -457,6 +458,13 @@ LogParser.prototype.getSystemStarted = function() {
 };
 
 LogParser.prototype.completePowerCycle = function() {
+    if (this._ignoreList.includes(this._nPowerCycles + 1)) {
+        console.log(`ignored power cycle #${this._nPowerCycles + 1}`);
+        ++this._nPowerCycles;
+        this._renewPowerCycle();
+        return;
+    }
+
     if (! this._powerDownDispatchTimeDetector.dispatchEvent) {
         /* This happened when the on-mains state detected the power has down.
          * There are still as short resp delay, but no log message can be used
@@ -563,12 +571,17 @@ LogParser.prototype.setColdStart = function(coldStart) {
 async function stat(argv)
 {
     const dataName = argv.dataName;
+    const ignoredPowerCycles = [];
+    if (argv.ignore && ! Array.isArray(argv.ignore))
+        ignoredPowerCycles.push(argv.ignore);
+    else
+        ignoredPowerCycles.push(...argv.ignore);
 
     const rl = readline.createInterface({ input: fs.createReadStream(argv.file) });
     var csvStream;
     if (dataName)
         csvStream = fs.createWriteStream(`${dataName}.csv`);
-    const parser = new LogParser(csvStream);
+    const parser = new LogParser(csvStream, ignoredPowerCycles);
     if (argv.maxLines !== undefined) parser.setMaxLines(argv.maxLines);
 
     verbose = argv.verbose;
@@ -615,18 +628,18 @@ const argv = yargs(process.argv.slice(2))
        }
     )
     .command('stat', 'statistics', yargs => {
-            yargs.option('rscript', {
-                alias: 'r',
-                describe: 'R script filename for plotting',
-                nargs: 1,
-                type: 'string',
-            });
             yargs.option('data-name', {
                 alias: 'd',
                 describe: 'dataset name used to create csv and plot files',
                 nargs: 1,
                 type: 'string',
                 default: 'stat',
+            });
+            yargs.option('ignore', {
+                alias: 'i',
+                describe: 'ignore specified power cycle',
+                nargs: 1,
+                type: 'number',
             });
         },
         stat,
