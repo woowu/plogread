@@ -571,15 +571,15 @@ LogParser.prototype._outputCurrPowerCycle = function() {
         backupTime = tickDiff(this._backupStartEvent.tick, this._backupEndEvent.tick);
 
     if (! this._nPowerCycles)
-        this._csv.write('No,PowerCycleLnoFrom,PowerCycleLnoTo,'
+        this._csv.write('No,LnoFrom,LnoTo,'
             + 'WakeupRealTime,WakeupMiliSecs,'
-            + 'PowerDownRealTime,PowerDownMiliSecs,'
+            + 'PowerDownRealTime,PdMiliSecs,'
             + 'WakeupTime,ResetTime,'
-            + 'PowerDownStartTime,PowerDownDispatchTime,'
+            + 'PdStartTime,PdDispatchTime,'
             + 'CapacitorTime,ShutdownTime,BackupTime,'
-            + 'UbiStartTime,UbiStopTime,NormalOprStartupTime,'
+            + 'UbiStartTime,UbiStopTime,NormalStartupTime,'
             + 'RespDelay,'
-            + 'StateWhenPowerDownDetected,StateWhenPowerDownDispatched\n'
+            + 'PdDetectedState,PdDispatchedState\n'
         );
 
     if (! this._coldStart)

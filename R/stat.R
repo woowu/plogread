@@ -28,8 +28,8 @@ n_samples <- nrow(data);
 #------------------------------------------------------------------------------
 # Print data summary
 #
-backupDone <- data %>% filter(StateWhenPowerDownDetected == 'normal-opr') %>% select(BackupTime, RespDelay)
-ubiStopDone <- data %>% filter(StateWhenPowerDownDetected != 'on-mains') %>% select(UbiStopTime)
+backupDone <- data %>% filter(PdDetectedState == 'normal-opr') %>% select(BackupTime, RespDelay)
+ubiStopDone <- data %>% filter(PdDetectedState != 'on-mains') %>% select(UbiStopTime)
 print(paste0('number of samples: ', nrow(data)))
 print(paste0('capacitor data: max ', max(data$CapacitorTime),
              ' mean ', mean(data$CapacitorTime)))
@@ -42,8 +42,8 @@ print(paste0('backup: max ', max(data$BackupTime),
 print(paste0('ubi: max ', max(data$UbiStopTime),
              ' mean ',mean(ubiStopDone$UbiStopTime)))
 plot_times_props <- function(y_col, title, ylab = NULL) {
-    ggplot(data = data, aes(x = PowerDownStartTime, y = y_col
-                                  , color=StateWhenPowerDownDispatched)) +
+    ggplot(data = data, aes(x = PdStartTime, y = y_col
+                                  , color=PdDispatchedState)) +
         geom_point() +
         ylim(0, ymax) +
         labs(title = title
@@ -109,7 +109,7 @@ print(paste0('saved', time_polt_pdf_name));
 
 plot_pdf <- function(data, x_col, xlab, ylab = NULL) {
     ggplot(data = data, aes(x = .data[[x_col]], kernel = "epanechnikov",
-                            fill = StateWhenPowerDownDispatched)) +
+                            fill = PdDispatchedState)) +
         xlim(0, NA) +
         labs(x = xlab, y = ylab, fill = 'Shutdown handled in:') +
         geom_density(size = .1);
@@ -120,7 +120,7 @@ pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup');
 pdf_stop_ubi <- plot_pdf(data, 'UbiStopTime', 'Stop UBI');
 pdf_resp_delay <- plot_pdf(data, 'RespDelay', 'Resp. delay');
 pdf_start_ubi <- plot_pdf(data, 'UbiStartTime', 'Start UBI');
-pdf_normal_opr_startup <- plot_pdf(data, 'NormalOprStartupTime', 'Normal Startup');
+pdf_normal_opr_startup <- plot_pdf(data, 'NormalStartupTime', 'Normal Startup');
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
@@ -148,7 +148,7 @@ pdf_backup <- plot_pdf(data %>% filter(BackupTime > 0.010), 'BackupTime', 'Backu
 pdf_stop_ubi <- plot_pdf(data %>% filter(UbiStopTime > .010), 'UbiStopTime', 'Stop UBI > 0.010s');
 pdf_resp_delay <- plot_pdf(data %>% filter(RespDelay > 0.016), 'RespDelay', 'Resp. delay > 0.016s');
 pdf_start_ubi <- plot_pdf(data %>% filter(UbiStartTime > 0), 'UbiStartTime', 'Start UBI > 0s');
-pdf_normal_opr_startup <- plot_pdf(data %>% filter(NormalOprStartupTime > 0), 'NormalOprStartupTime', 'Normal Startup > 0');
+pdf_normal_opr_startup <- plot_pdf(data %>% filter(NormalStartupTime > 0), 'NormalStartupTime', 'Normal Startup > 0');
 
 prow2 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
