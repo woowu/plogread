@@ -577,7 +577,7 @@ LogParser.prototype._outputCurrPowerCycle = function() {
             + 'WakeupTime,ResetTime,'
             + 'PdStartTime,PdDispatchTime,'
             + 'CapacitorTime,ShutdownTime,BackupTime,'
-            + 'UbiStartTime,UbiStopTime,NormalStartupTime,'
+            + 'UbiStartTime,UbiStopTime,NormalOprStartupTime,'
             + 'RespDelay,'
             + 'PdDetectedState,PdDispatchedState\n'
         );
