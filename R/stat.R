@@ -25,15 +25,17 @@ data <- data %>% mutate(BackupAndStopUbiTime = BackupTime + UbiStopTime);
 
 ymax <- max(data$CapacitorTime)
 n_samples <- nrow(data);
-data <- data %>% filter(PdDetectedState != 'on-mains');
-excluded_samples <- n_samples - nrow(data);
+#data <- data %>% filter(PdDetectedState != 'on-mains');
+#excluded_samples <- n_samples - nrow(data);
 
 #------------------------------------------------------------------------------
 # Print data summary
 #
 backupDone <- data %>% filter(PdDetectedState == 'normal-opr') %>% select(BackupTime, RespDelay)
 ubiStopDone <- data %>% filter(PdDetectedState != 'on-mains') %>% select(UbiStopTime)
-print(paste0('ttl. number of samples: ', n_samples, ' (excl. power down in on-mains = ', excluded_samples, ')'))
+print(paste0('ttl. number of samples: ', n_samples
+             #, ' (excl. power down in on-mains = ', excluded_samples, ')'
+             ))
 print(paste0('capacitor data: max ', max(data$CapacitorTime),
              ' mean ', mean(data$CapacitorTime)))
 print(paste0('response delay: max ', max(data$RespDelay),
@@ -96,7 +98,9 @@ title <- ggdraw() +
              x = 0, hjust = 0, vjust = 1) +
   theme(plot.margin = margin(0, 0, 0, 7));
 caption <- ggdraw() +
-  draw_label(paste0('ttl. number of samples: ', n_samples, ' (excl. power down in on-mains = ', excluded_samples, ')'),
+  draw_label(paste0('ttl. number of samples: ', n_samples
+                    #, ' (excl. power down in on-mains = ', excluded_samples, ')'
+                    ),
              size = 10,
              x = 0, hjust = 0, vjust = 1) +
   theme(plot.margin = margin(0, 0, 10, 7));
@@ -156,9 +160,6 @@ pdf_normal_opr_startup <- plot_pdf(data, 'NormalOprStartupTime', 'Normal mode st
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
-               pdf_start_ubi + theme(legend.position = 'none'),
-               pdf_stop_ubi + theme(legend.position = 'none'),
-               pdf_normal_opr_startup + theme(legend.position = 'none'),
                pdf_resp_delay + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
@@ -167,47 +168,17 @@ prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                nrow = 1
                );
 
-legend1 <- get_legend(
-    pdf_capacitor + guides(fill = guide_legend(nrow = 1), color='none') +
-    theme(legend.position = 'bottom', legend.title.align=1,
-          legend.title = element_text(size=9))
-);
-
-# The extreme small time can contribute a very large portion of the whole
-# observations, if not exlude them, they will dominate the y-scale making the
-# more useful info almost impossible to be seen.
-pdf_capacitor <- plot_pdf(data %>% filter(CapacitorTime > 0.020),
-                          'CapacitorTime', 'Capacitor time > 0.020s',
-                          ylab = 'density', max_line = FALSE);
-pdf_backup <- plot_pdf(data %>% filter(BackupTime > 0.010),
-                       'BackupTime', 'Backup > 0.010s',
-                       ylab = NULL, max_line = FALSE);
-pdf_stop_ubi <- plot_pdf(data %>% filter(UbiStopTime > .010),
-                         'UbiStopTime', 'Stop UBI > 0.010s',
-                         ylab = NULL, max_line = FALSE);
-pdf_resp_delay <- plot_pdf(data %>% filter(RespDelay > 0.016),
-                           'RespDelay', 'Resp. delay > 0.016s',
-                           ylab = NULL, max_line = FALSE);
-pdf_start_ubi <- plot_pdf(data %>% filter(UbiStartTime > 0),
-                          'UbiStartTime', 'Start UBI > 0s',
-                          ylab = NULL, max_line = FALSE);
-pdf_normal_opr_startup <- plot_pdf(data %>% filter(NormalOprStartupTime > 0),
-                                   'NormalOprStartupTime', 'Normal mode startup > 0',
-                                   ylab = NULL, max_line = FALSE);
-
-prow2 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
-               pdf_backup + theme(legend.position = 'none'),
-               pdf_start_ubi + theme(legend.position = 'none'),
+prow2 <- plot_grid(pdf_start_ubi + theme(legend.position = 'none'),
                pdf_stop_ubi + theme(legend.position = 'none'),
                pdf_normal_opr_startup + theme(legend.position = 'none'),
-               pdf_resp_delay + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
                vjust = 1,
                hjust = -1,
-               nrow = 1);
+               nrow = 1
+               );
 
-legend2 <- get_legend(
+legend <- get_legend(
     pdf_capacitor + guides(fill = guide_legend(nrow = 1), color='none') +
     theme(legend.position = 'bottom', legend.title.align=1,
           legend.title = element_text(size=9))
@@ -222,12 +193,10 @@ title <- ggdraw() +
 p_distribution <- plot_grid(title,
                             caption,
                             prow1,
-                            legend1,
                             prow2,
-                            legend2,
+                            legend,
                             ncol = 1,
-                            rel_heights=c(.07, 0.03, .40, .05, .40, .05)
-                            #rel_heights=c(.07, 0.03, .40, .05, .40)
+                            rel_heights=c(.07, 0.03, .425, .425, .05)
                             );
 
 ggsave(distri_polt_png_name, p_distribution, width=12, height=6, bg = 'white');
