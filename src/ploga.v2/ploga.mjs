@@ -10,7 +10,6 @@ import readline from 'node:readline';
 import yargs from 'yargs/yargs';
 import fs from 'node:fs';
 import moment from 'moment';
-import updatePowerCycle from './power-cycle.mjs';
 
 const execp = util.promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
