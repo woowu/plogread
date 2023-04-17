@@ -195,7 +195,7 @@ function handleCycle(cycle, csvStream)
         return;
     }
 
-    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd}`);
+    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd},${cycle.coldStart}`);
 
     const metrics = [];
     for (const metric of metricCalculators) {
@@ -256,7 +256,7 @@ function stat(argv)
     };
 
     const csvStream = fs.createWriteStream(`${argv.dataName}.csv`);
-    var header = 'No,LnoFrom,LnoTo';
+    var header = 'No,LnoFrom,LnoTo,ColdStart';
     for (const metric of metricCalculators) {
         header += `,${metric.metric}`;
     }

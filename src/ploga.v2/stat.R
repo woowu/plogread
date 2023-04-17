@@ -19,25 +19,22 @@ distri_polt_pdf_name <- file.path(opts$dir, paste0(data_name, '-distribution.pdf
 # prepare and manipulate data
 
 data <- read.csv(csv_filename);
+data <- data %>% filter(ColdStart == 'false');
 xmax <- max(data$CapacitorTime)
 n_samples <- nrow(data);
 
 #------------------------------------------------------------------------------
-# Print data summary
-#
-print(paste0('ttl. number of samples: ', n_samples
-             ))
-
-#------------------------------------------------------------------------------
 # pdf plots
 
-plot_pdf <- function(data, col, xlab, ylab, max_line) {
+plot_pdf <- function(data, col, xlab, ylab) {
     # TODO: how to avoid this stupid?
     #
     if (col == 'CapacitorTime') {
-        mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(CapacitorTime));
+        mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(CapacitorTime)
+                    , grp.mean = mean(CapacitorTime));
     } else if (col == 'BackupTime') {
-        mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(BackupTime));
+        mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(BackupTime)
+                    , grp.mean = mean(BackupTime));
     }
 
     p <- ggplot(data = data, aes(x = .data[[col]], kernel = "epanechnikov",
@@ -45,18 +42,19 @@ plot_pdf <- function(data, col, xlab, ylab, max_line) {
         geom_density(size = .1) +
         xlim(0, xmax) +
         labs(x = xlab, y = ylab, fill = NULL);
-    if (max_line) {
-        p <- p + 
-            geom_vline(data = mu, aes(xintercept = grp.max, color = ShutdownType),
-                       linetype='dashed', size = .2);
-    }
+    p <- p + 
+        geom_vline(data = mu, aes(xintercept = grp.max, color = ShutdownType),
+                   linetype='dashed', size = .2);
+    p <- p + 
+        geom_vline(data = mu, aes(xintercept = grp.mean, color = ShutdownType),
+                   linetype='dashed', size = .2);
     return(p);
 };
 
 pdf_capacitor <- plot_pdf(data, 'CapacitorTime', 'Capacitor time',
-                          ylab = 'density', max_line = TRUE);
+                          ylab = 'density');
 pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup',
-                       ylab = NULL, max_line = TRUE);
+                       ylab = NULL);
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
@@ -80,8 +78,7 @@ title <- ggdraw() +
   theme(plot.margin = margin(0, 0, 0, 7));
 
 caption <- ggdraw() +
-  draw_label(paste0('ttl. number of samples: ', n_samples
-                    ),
+  draw_label(paste0(n_samples, ' samples'),
              size = 10,
              x = 0, hjust = 0, vjust = 1) +
   theme(plot.margin = margin(0, 0, 10, 7));
@@ -91,7 +88,7 @@ p_distribution <- plot_grid(title,
                             prow1,
                             legend,
                             ncol = 1,
-                            rel_heights=c(.07, 0.03, .85, .05)
+                            rel_heights=c(.07, .05, .83, .05)
                             );
 
 ggsave(distri_polt_png_name, p_distribution, width=12, height=6, bg = 'white');
