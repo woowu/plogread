@@ -149,7 +149,7 @@ function detectCycleBoundary(message)
             state: 'cycle-start',
             coldStart: +m[1] == 1,
         };
-    if (message.search('reset mcu') >= 0)
+    if (message.search('shutdown took') >= 0)
         return {
             state: 'cycle-end',
         };
@@ -166,7 +166,11 @@ function parse(context, line)
     const { state, coldStart } = detectCycleBoundary(message);
     ++lno;
 
-    if (! cycle && state == 'cycle-start')
+    if (cycle && state == 'cycle-start' && ! coldStart)
+        console.error(`an incompleted cycle detected: seqno ${cycle.seqno}`
+            + ` lno start ${cycle.lnoStart} current line ${lno}`);
+
+    if (state == 'cycle-start')
         cycle = {
             seqno: seqno++,
             lnoStart: lno,
@@ -174,7 +178,13 @@ function parse(context, line)
             logs: [{ time, tick, mod, task, message }],
         };
     if (cycle && state == 'cycle-end')
-        cycle = { ...cycle, lnoEnd: lno };
+        cycle = {
+            ...cycle,
+            logs: [...cycle.logs, {
+                time, tick, mod, task, message
+            }],
+            lnoEnd: lno,
+        };
     if (cycle && state == 'unknown')
         cycle = {
             ...cycle,
@@ -217,6 +227,40 @@ function isCycleCompleted(cycle)
 
 function checkCycleHealthy(cycle)
 {
+    const findWritingShutdownReason = () => {
+        var shutdownReason;
+
+        /* for format 1 */
+        shutdownReason = null;
+        for (const log of cycle.logs.slice().reverse()) {
+            const m = log.message.match(/update shutdown reason to ([0-9]+)/);
+            if (m) {
+                shutdownReason = +m[1];
+                return { reason: shutdownReason, success: true };
+            }
+        }
+
+        /* for format 2 */
+        shutdownReason = null;
+        for (const log of cycle.logs) {
+            var m;
+            const p1 = /writing shutdown reason ([0-9]+) for shutdown/;
+            const p2 = /writing shutdown reason succeeded/;
+
+            if (shutdownReason === null) {
+                m = log.message.match(p1);
+                if (m)
+                    shutdownReason = +m[1];
+            } else {
+                m = log.message.match(p1);
+                if (m)
+                    return { reason: shutdownReason, success: true };
+            }
+        }
+
+        return { reason: shutdownReason, success: false };
+    };
+
     const badMessages = [
         'watchdog reset detected',
         'invalid powerdown detected',
@@ -230,16 +274,9 @@ function checkCycleHealthy(cycle)
     if (analysisShutdownType(cycle) == 'No Backup')
         return 'ok';
 
-    var shutdownReason = null;
-    for (const log of cycle.logs.slice().reverse()) {
-        const m = log.message.match(/update shutdown reason to ([0-9]+)/);
-        if (m) {
-            shutdownReason = +m[1];
-            break;
-        }
-    }
-    if (shutdownReason != 3)
-        return `not update shutdown reason properly: ${shutdownReason}`;
+    const { reason, success } = findWritingShutdownReason();
+    if (reason != 3)
+        return `not update shutdown reason properly: ${reason}`;
     return 'ok';
 }
 
