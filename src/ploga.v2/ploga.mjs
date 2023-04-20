@@ -24,7 +24,8 @@ const metricCalculators = [
     { metric: 'ShutdownType', calculator: analysisShutdownType },
     { metric: 'CapacitorTime', calculator: calcCapacitorTime },
     { metric: 'BackupTime', calculator: calcBackupTime },
-    { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime},
+    { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime },
+    { metric: 'WrShutdownReason', calculator: calcWriteShutdownReasonTime },
 ];
 
 /*===========================================================================*/
@@ -135,6 +136,31 @@ function calcWaitIoDrainTime(cycle)
         const { tick, message } = log;
         const m = message.match(/waiting ubi drain took ([0-9]+) ms/);
         if (m) return +m[1] / 1000;
+    }
+    return 0;
+}
+
+function calcWriteShutdownReasonTime(cycle)
+{
+    var start = null;
+    var sepLines;
+
+    for (const log of cycle.logs) {
+        const { tick, message } = log;
+
+        if (start == null && (message.search(/update shutdown reason to 3$/) >= 0
+            || message.search(/writing shutdown reason 3 for shutdown/) >= 0)) {
+            start = tick;
+            sepLines = 0;
+        }
+        if (start !== null && message.search(/write shutdown reason succeeded/) >= 0)
+            return tickDiff(start, tick);
+        if (start !== null && message.search(/write shutdown reason succeeded/) <= 0
+            && ++sepLines >= 5) {
+            console.error(`too much lines between start and end of writing`
+                + ` shutdown reason. cycle: `
+                + ` ${cycle.seqno} ${cycle.lnoStart} ${cycle.lnoEnd}`);
+        }
     }
     return 0;
 }
@@ -283,7 +309,9 @@ function checkCycleHealthy(cycle)
 function stat(argv)
 {
     const rl = readline.createInterface({
-        input: fs.createReadStream(argv.file)
+        input: (argv.file == null || argv.file == '-')
+            ? process.stdin : fs.createReadStream(argv.file),
+        terminal: false,
     });
 
     var context = {
@@ -329,7 +357,6 @@ const argv = yargs(process.argv.slice(2))
         alias: 'file',
         describe: 'log filename', 
         nargs: 1,
-        demandOption: true,
         type: 'string',
        }
     )

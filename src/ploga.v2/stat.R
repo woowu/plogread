@@ -18,8 +18,7 @@ distri_polt_pdf_name <- file.path(opts$dir, paste0(data_name, '-distribution.pdf
 #------------------------------------------------------------------------------
 # prepare and manipulate data
 
-data <- read.csv(csv_filename);
-data <- data %>% filter(ColdStart == 'false');
+data <- read.csv(csv_filename) %>% filter(ColdStart == 'false');
 xmax <- max(data$CapacitorTime)
 n_samples <- nrow(data);
 
@@ -35,12 +34,15 @@ plot_pdf <- function(data, col, xlab, ylab) {
     } else if (col == 'BackupTime') {
         mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(BackupTime)
                     , grp.mean = mean(BackupTime));
+    } else if (col == 'WrShutdownReason') {
+        mu <- ddply(data, 'ShutdownType', summarise, grp.max = max(WrShutdownReason)
+                    , grp.mean = mean(WrShutdownReason));
     }
 
     p <- ggplot(data = data, aes(x = .data[[col]], kernel = "epanechnikov",
                             fill = ShutdownType)) +
         geom_density(size = .1) +
-        xlim(0, xmax) +
+        #xlim(0, xmax) +
         labs(x = xlab, y = ylab, fill = NULL);
     p <- p + 
         geom_vline(data = mu, aes(xintercept = grp.max, color = ShutdownType),
@@ -51,13 +53,14 @@ plot_pdf <- function(data, col, xlab, ylab) {
     return(p);
 };
 
-pdf_capacitor <- plot_pdf(data, 'CapacitorTime', 'Capacitor time',
-                          ylab = 'density');
-pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup',
-                       ylab = NULL);
+pdf_capacitor <- plot_pdf(data, 'CapacitorTime', 'Capacitor time', ylab = 'density');
+pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup', ylab = NULL);
+pdf_wrShutdownReason <- plot_pdf(data, 'WrShutdownReason', 'Wr Shutdown Reason'
+                                 , ylab = NULL);
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
+               pdf_wrShutdownReason + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
                vjust = 1,
