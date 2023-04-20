@@ -154,11 +154,10 @@ function calcWriteShutdownReasonTime(cycle)
             sepLines = 0;
         }
         if (start !== null && message.search(/write shutdown reason succeeded/) >= 0)
-            return tickDiff(start, tick);
+            return tickDiff(start, tick) / 1000;
         if (start !== null && message.search(/write shutdown reason succeeded/) <= 0
             && ++sepLines >= 5) {
-            console.error(`too much lines between start and end of writing`
-                + ` shutdown reason. cycle: `
+            console.error(`lost writing of shutdown reason? cycle: `
                 + ` ${cycle.seqno} ${cycle.lnoStart} ${cycle.lnoEnd}`);
         }
     }
