@@ -13,7 +13,7 @@ import moment from 'moment';
 
 const execp = util.promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const statScript = path.join(__dirname, 'stat.R');
+const statScript = path.join(__dirname, 'stat-nogrp.R');
 
 const TICK_START_VALUE = 0xfffc0000;
 var verbose = false;
