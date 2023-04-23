@@ -13,7 +13,7 @@ import moment from 'moment';
 
 const execp = util.promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const statScript = path.join(__dirname, 'stat-nogrp.R');
+const statScript = path.join(__dirname, 'stat.R');
 
 const TICK_START_VALUE = 0xfffc0000;
 var verbose = false;
@@ -73,35 +73,37 @@ function analysisShutdownType(cycle)
 
 function calcCapacitorTime(cycle)
 {
-    var start;
+    var start = null;
     var end = null;
 
-    var ii;
-    for (var i = 0; i < cycle.logs.length; ++i) {
+    var i = cycle.logs.length - 1;
+    for (; i >= 0; --i) {
         const { tick, message } = cycle.logs[i];
-        if (message.search('PSCm send event PowerBelowPowersaveLevel') >= 0) {
-            start = tick;
-            ii = i;
-        }
-        if (message.search('shutdown took') >= 0) {
+        if (message.search('shutdown took') >= 0
+            || message.search('enter psm wait-for-reset') >= 0) {
             end = tick;
             break;
         }
-        if (message.search('PSCm send event PowerBelowShutdownLevel') >= 0) {
+    }
+    if (end == null)
+        throw new Error(`PSCm events is not complete. ${cycleTitle(cycle)}.`);
+
+    for (; i >= 0; --i) {
+        const { tick, message } = cycle.logs[i];
+        if (message.search('PSCm send event PowerBelowPowersaveLevel') >= 0
+            || message.search('PSCm send event PowerBelowShutdownLevel') >= 0)
+            break;
+    }
+    for (; i >= 0; --i) {
+        const { tick, message } = cycle.logs[i];
+        if (message.search('power supply state switch: Normal -> FilteringTime')
+            >= 0) {
             start = tick;
-            ii = i;
             break;
         }
     }
-    if (end === null)
-        for (var i = ii + 1; i < cycle.logs.length; ++i) {
-            const { tick, message } = cycle.logs[i];
-            if (message.search('shutdown took') >= 0) {
-                end = tick;
-                break;
-            }
-        }
-    if (isNaN(start) || isNaN(end))
+
+    if (start == null || end == null)
         throw new Error(`PSCm events is not complete. ${cycleTitle(cycle)}.`);
     return tickDiff(start, end) / 1000;
 }
@@ -110,22 +112,20 @@ function calcBackupTime(cycle)
 {
     var start = null;
     var end = null;
-    var saveCount = 0;
 
     for (var i = 0; i < cycle.logs.length; ++i) {
         const { tick, message } = cycle.logs[i];
-        if (message.search('save ram-backup') >= 0) {
-            ++saveCount;
+        if (message.search('PSCm send slaves with event stop') >= 0) {
             if (start === null) start = tick;
         }
-        if (message.search('stop data model') >= 0) {
+        if (message.search('PSCm send slaves with event WaitForTaskCompletion') >= 0) {
             end = tick;
             break;
         }
     }
 
     if (start === null && end === null) return 0;
-    if (start === null || end === null || saveCount != 4)
+    if (start === null || end === null)
         throw new Error(`incompleted saving of ram-backup`);
     return tickDiff(start, end) / 1000;
 }
@@ -174,7 +174,8 @@ function detectCycleBoundary(message)
             state: 'cycle-start',
             coldStart: +m[1] == 1,
         };
-    if (message.search('shutdown took') >= 0)
+    if (message.search('shutdown took') >= 0
+        || message.search('enter psm wait-for-reset') >= 0)
         return {
             state: 'cycle-end',
         };
@@ -223,6 +224,8 @@ function parse(context, line)
 
 function handleCycle(cycle, csvStream)
 {
+    console.log(cycleTitle(cycle));
+
     const err = checkCycleHealthy(cycle);
     if (err != 'ok') {
         console.log(`cycle ${cycle.seqno} from line`
@@ -327,8 +330,18 @@ function stat(argv)
     header += '\n';
     csvStream.write(header);
 
+    const onEnd = async () => {
+        csvStream.end();
+        const cmdline = `${statScript}`
+            + ` --dir ${process.cwd()} --data "${argv.dataName}"`;
+        console.log(cmdline);
+        const { stdout, stderr } = await execp(cmdline);
+        if (stderr) console.error(stderr);
+        console.log(stdout);
+    };
+
     rl.on('line', line => {
-        if (argv.maxLines && context.lno > argv.maxLines) return;
+        if (argv.maxLines && context.lno == argv.maxLines) return;
 
         var { cycle, lno, seqno } = parse(context, line);
         if (cycle && isCycleCompleted(cycle)) {
@@ -338,15 +351,7 @@ function stat(argv)
         context = { cycle, lno, seqno };
     });
 
-    rl.on('close', async () => {
-        csvStream.end();
-        const cmdline = `${statScript}`
-            + ` --dir ${process.cwd()} --data "${argv.dataName}"`;
-        console.log(cmdline);
-        const { stdout, stderr } = await execp(cmdline);
-        if (stderr) console.error(stderr);
-        console.log(stdout);
-    });
+    rl.on('close', onEnd);
 }
 
 /*===========================================================================*/
