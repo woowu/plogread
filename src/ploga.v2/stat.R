@@ -12,13 +12,17 @@ option_list <- list(
 opts <- parse_args(OptionParser(option_list=option_list));
 data_name <- opts$data_name;
 csv_filename <- file.path(opts$dir, paste0(data_name, '.csv'));
-distri_polt_png_name <- file.path(opts$dir, paste0(data_name, '.png'));
-distri_polt_pdf_name <- file.path(opts$dir, paste0(data_name, '.pdf'));
+density_png_name <- file.path(opts$dir, paste0(data_name, '.png'));
+density_pdf_name <- file.path(opts$dir, paste0(data_name, '.pdf'));
 
 #------------------------------------------------------------------------------
 # prepare and manipulate data
 
 data <- read.csv(csv_filename) %>% filter(ColdStart == 'false');
+#if (nrow(data) > 10000) {
+#    data <- data %>% arrange(CapacitorTime)
+#    data <- data %>% filter(row_number() <= n() * (1 - .5/10000))
+#}
 n_samples <- nrow(data);
 
 #------------------------------------------------------------------------------
@@ -29,27 +33,33 @@ plot_pdf <- function(data, col, xlab, ylab) {
     #
     if (col == 'CapacitorTime') {
         max <- max(data$CapacitorTime)
-        mean <- mean(data$CapacitorTime)
         i = which.max(density(data$CapacitorTime)$y)
         typical = density(data$CapacitorTime)$x[i]
         print(paste0('capacitor time: max ', max, ' typical ', typical));
     } else if (col == 'BackupTime') {
         max <- max(data$BackupTime)
-        mean <- mean(data$BackupTime)
-        i = which.max(density(data$BackupTime)$y)
-        typical = density(data$BackupTime)$x[i]
+        noBackupExcl <- data %>% filter(BackupTime > 0.02);
+        i = which.max(density(noBackupExcl$BackupTime)$y)
+        typical = density(noBackupExcl$BackupTime)$x[i]
         print(paste0('backup time: max ', max, ' typical ', typical));
     } else if (col == 'WrShutdownReason') {
         max <- max(data$WrShutdownReason)
-        mean <- mean(data$WrShutdownReason)
         i = which.max(density(data$WrShutdownReason)$y)
         typical = density(data$WrShutdownReason)$x[i]
         print(paste0('wr shutdown-reason time: max ', max, ' typical ', typical));
+    } else if (col == 'WaitMeas') {
+        max <- max(data$WaitMeas)
+        i = which.max(density(data$WaitMeas)$y)
+        typical = density(data$WaitMeas)$x[i]
+        print(paste0('wait meas time: max ', max, ' typical ', typical));
     }
+    if (typical < 0) typical = 0;
 
     p <- ggplot(data = data, aes(x = .data[[col]], kernel = "epanechnikov")) +
         geom_density(size = .1, fill='darkblue') +
-        labs(x = xlab, y = ylab);
+        labs(x = xlab, y = ylab) +
+        theme(axis.text.x = element_text(size = 6)) +
+        theme(axis.title = element_text(size = 8));
     p <- p + 
         geom_vline(data = data, aes(xintercept = max), linetype='dashed', size = .2);
     p <- p + 
@@ -61,10 +71,12 @@ pdf_capacitor <- plot_pdf(data, 'CapacitorTime', 'Capacitor time', ylab = 'densi
 pdf_backup <- plot_pdf(data, 'BackupTime', 'Backup', ylab = NULL);
 #pdf_wrShutdownReason <- plot_pdf(data, 'WrShutdownReason', 'Wr Shutdown Reason'
 #                                 , ylab = NULL);
+pdf_waitMeas <- plot_pdf(data, 'WaitMeas', 'Wait Meas'
+                                 , ylab = NULL);
 
 prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
                pdf_backup + theme(legend.position = 'none'),
-               #pdf_wrShutdownReason + theme(legend.position = 'none'),
+               pdf_waitMeas + theme(legend.position = 'none'),
                align = 'vh',
                labels = NULL,
                vjust = 1,
@@ -74,13 +86,13 @@ prow1 <- plot_grid(pdf_capacitor + theme(legend.position = 'none'),
 
 title <- ggdraw() +
   draw_label(paste0(data_name),
-             size = 18,
+             size = 10,
              x = 0, hjust = 0, vjust=1) +
   theme(plot.margin = margin(0, 0, 0, 7));
 
 caption <- ggdraw() +
   draw_label(paste0(n_samples, ' samples'),
-             size = 10,
+             size = 9,
              x = 0, hjust = 0, vjust = 1) +
   theme(plot.margin = margin(0, 0, 10, 7));
 
@@ -88,10 +100,12 @@ p_distribution <- plot_grid(title,
                             caption,
                             prow1,
                             ncol = 1,
-                            rel_heights=c(.07, .05, .88)
+                            rel_heights=c(.14, .08, .78)
                             );
 
-ggsave(distri_polt_png_name, p_distribution, width=12, height=6, bg = 'white');
-print(paste0('saved', distri_polt_png_name));
-ggsave(distri_polt_pdf_name, p_distribution, width=12, height=6, bg = 'white');
-print(paste0('saved', distri_polt_pdf_name));
+width = 5.5;
+height = 3.5;
+ggsave(density_png_name, p_distribution, width=width, height=height, bg = 'white');
+print(paste0('saved', density_png_name));
+ggsave(density_pdf_name, p_distribution, width=width, height=height, bg = 'white');
+print(paste0('saved', density_pdf_name));

@@ -25,6 +25,7 @@ const metricCalculators = [
     { metric: 'CapacitorTime', calculator: calcCapacitorTime },
     { metric: 'BackupTime', calculator: calcBackupTime },
     { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime },
+    { metric: 'WaitMeas', calculator: calcWaitMeansTime },
     { metric: 'WrShutdownReason', calculator: calcWriteShutdownReasonTime },
 ];
 
@@ -138,6 +139,64 @@ function calcWaitIoDrainTime(cycle)
         if (m) return +m[1] / 1000;
     }
     return 0;
+}
+
+function calcWaitMeansTime(cycle)
+{
+    var version = -1;
+
+    for (const log of cycle.logs) {
+        const { message } = log;
+        if (message.search(
+            /MultiModuleSystemApplicationApp::stopMeasurementSystemAndWaitData/
+            ) >= 0) {
+            version = 1;
+            break;
+        }
+        if (message.search(
+            /stopping meas processing/
+            ) >= 0) {
+            version = 2;
+            break;
+        }
+    }
+    if (version < 0) return 0;
+
+    const forVersion1 = () => {
+        var intvl = [null, null];
+        for (const log of cycle.logs) {
+            const { tick, message } = log;
+            var m;
+            if (message.search('start shutdown') >= 0)
+                intvl[0] = tick;
+            if (message.search('PSCm send slaves with event stop') >= 0
+                || message.search('non-backup done') >= 0)
+                intvl[1] = tick;
+        }
+        return intvl;
+    };
+    const forVersion2 = () => {
+        var intvl = [null, null];
+        for (const log of cycle.logs) {
+            const { tick, message } = log;
+            var m;
+            if (message.search(/stopping meas processing$/) >= 0)
+                intvl[0] = tick;
+            if (message.search(/stopping meas processing: done/) >= 0)
+                intvl[1] = tick;
+        }
+        return intvl;
+    };
+
+    const intvl = version == 1 ? forVersion1() : forVersion2();
+    const start = intvl[0];
+    const end = intvl[1];
+
+    if (start == null && end != null
+        ||start != null && end == null)
+        throw new Error(`stopping meas not completed? ${cycleTitle(cycle)}`);
+
+    return start == null && end == null ? 0 : tickDiff(start, end) / 1000;
 }
 
 function calcWriteShutdownReasonTime(cycle)
@@ -332,6 +391,8 @@ function stat(argv)
 
     const onEnd = async () => {
         csvStream.end();
+        if (! argv.plot) return;
+
         const cmdline = `${statScript}`
             + ` --dir ${process.cwd()} --data "${argv.dataName}"`;
         console.log(cmdline);
@@ -393,8 +454,9 @@ const argv = yargs(process.argv.slice(2))
             });
             yargs.option('plot', {
                 alias: 'P',
-                describe: 'not to plot',
+                describe: 'to plot',
                 type: 'boolean',
+                default: true,
             });
         },
         stat,
