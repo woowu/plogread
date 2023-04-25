@@ -25,6 +25,7 @@ const metricCalculators = [
     { metric: 'CapacitorTime', calculator: calcCapacitorTime },
     { metric: 'BackupTime', calculator: calcBackupTime },
     { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime },
+    { metric: 'ShutdownDelay', calculator: calcShutdownDelay},
     { metric: 'WaitMeas', calculator: calcWaitMeansTime },
     { metric: 'WrShutdownReason', calculator: calcWriteShutdownReasonTime },
 ];
@@ -139,6 +140,16 @@ function calcWaitIoDrainTime(cycle)
         if (m) return +m[1] / 1000;
     }
     return 0;
+}
+
+function calcShutdownDelay(cycle)
+{
+    for (const log of cycle.logs) {
+        const { tick, message } = log;
+        const m = message.match(/delayed ([0-9]+) ms before handling power down/);
+        if (m) return +m[1] / 1000;
+    }
+    throw new Error('lost shutdown delay message');
 }
 
 function calcWaitMeansTime(cycle)
