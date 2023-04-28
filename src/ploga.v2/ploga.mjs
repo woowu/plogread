@@ -27,6 +27,7 @@ const metricCalculators = [
     { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime },
     { metric: 'ShutdownDelay', calculator: calcShutdownDelay},
     { metric: 'WaitMeas', calculator: calcWaitMeansTime },
+    { metric: 'Bridging', calculator: calcBridgingTime },
     { metric: 'WrShutdownReason', calculator: calcWriteShutdownReasonTime },
 ];
 
@@ -150,6 +151,21 @@ function calcShutdownDelay(cycle)
         if (m) return +m[1] / 1000;
     }
     throw new Error('lost shutdown delay message');
+}
+
+function calcBridgingTime(cycle)
+{
+    var start = null;
+    var end = null;
+
+    for (const log of cycle.logs) {
+        const { tick, message } = log;
+        if (message.search(/handle PowerBelowPowersaveLevel/) >= 0)
+            start = tick;
+        if (message.search(/handle PowerBelowShutdownLevel/) >= 0)
+            end = tick;
+    }
+    return (start != null && end != null) ? tickDiff(start, end) / 1000 : 0;
 }
 
 function calcWaitMeansTime(cycle)
