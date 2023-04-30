@@ -22,6 +22,7 @@ var verbose = false;
 
 const metricCalculators = [
     { metric: 'ShutdownType', calculator: analysisShutdownType },
+    { metric: 'CompleteStartup', calculator: calcCompleteStartup },
     { metric: 'CapacitorTime', calculator: calcCapacitorTime },
     { metric: 'BackupTime', calculator: calcBackupTime },
     { metric: 'WaitIoDrain', calculator: calcWaitIoDrainTime },
@@ -29,6 +30,7 @@ const metricCalculators = [
     { metric: 'WaitMeas', calculator: calcWaitMeansTime },
     { metric: 'Bridging', calculator: calcBridgingTime },
     { metric: 'WrShutdownReason', calculator: calcWriteShutdownReasonTime },
+    { metric: 'PowerRecoverTimes', calculator: calcPowerRecoverTimes },
 ];
 
 /*===========================================================================*/
@@ -248,6 +250,34 @@ function calcWriteShutdownReasonTime(cycle)
         }
     }
     return 0;
+}
+
+function calcPowerRecoverTimes(cycle)
+{
+    var powerSaveStarted = false;
+    var n = 0;
+
+    for (const log of cycle.logs) {
+        const { message } = log;
+        if (message.search(/handle PowerBelowPowersaveLevel/) >= 0)
+            powerSaveStarted = true;
+        if (powerSaveStarted && message.search(
+            /handle PowerAboveStartupLevel/) >= 0) {
+            powerSaveStarted = false;
+            ++n;
+        }
+    }
+    return n;
+}
+
+function calcCompleteStartup(cycle)
+{
+    for (const log of cycle.logs) {
+        const { message } = log;
+        if (message.search(/handle PowerAboveStartupLevel/) >= 0)
+            return true;
+    }
+    return false;
 }
 
 /*===========================================================================*/

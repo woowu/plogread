@@ -49,8 +49,9 @@ plot_pdf <- function(data, col, xlab, ylab) {
         print(paste0('wr shutdown-reason time: max ', max, ' typical ', typical));
     } else if (col == 'WaitMeas') {
         max <- max(data$WaitMeas)
-        i = which.max(density(data$WaitMeas)$y)
-        typical = density(data$WaitMeas)$x[i]
+        triviallExcl <- data %>% filter(WaitMeas > 0.005);
+        i = which.max(density(triviallExcl$WaitMeas)$y)
+        typical = density(triviallExcl$WaitMeas)$x[i]
         print(paste0('wait meas time: max ', max, ' typical ', typical));
     }
     if (typical < 0) typical = 0;
