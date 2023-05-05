@@ -338,7 +338,7 @@ function parse(context, line)
     return { cycle, lno, seqno };
 }
 
-function handleCycle(cycle, csvStream)
+function statCycle(cycle, csvStream)
 {
     console.log(cycleTitle(cycle));
 
@@ -424,7 +424,7 @@ function checkCycleHealthy(cycle)
     return 'ok';
 }
 
-function stat(argv)
+function parseCycles(argv, onCycle, onEnd)
 {
     const rl = readline.createInterface({
         input: (argv.file == null || argv.file == '-')
@@ -438,6 +438,22 @@ function stat(argv)
         seqno: 0,
     };
 
+    rl.on('line', line => {
+        if (argv.maxLines && context.lno == argv.maxLines) return;
+
+        var { cycle, lno, seqno } = parse(context, line);
+        if (cycle && isCycleCompleted(cycle)) {
+            onCycle(cycle);
+            cycle = null;
+        }
+        context = { cycle, lno, seqno };
+    });
+
+    rl.on('close', onEnd);
+}
+
+function stat(argv)
+{
     const csvStream = fs.createWriteStream(`${argv.dataName}.csv`);
     var header = 'No,LnoFrom,LnoTo,ColdStart';
     for (const metric of metricCalculators) {
@@ -446,7 +462,9 @@ function stat(argv)
     header += '\n';
     csvStream.write(header);
 
-    const onEnd = async () => {
+    parseCycles(argv, cycle => {
+        statCycle(cycle, csvStream);
+    }, async () => {
         csvStream.end();
         if (! argv.plot) return;
 
@@ -456,20 +474,7 @@ function stat(argv)
         const { stdout, stderr } = await execp(cmdline);
         if (stderr) console.error(stderr);
         console.log(stdout);
-    };
-
-    rl.on('line', line => {
-        if (argv.maxLines && context.lno == argv.maxLines) return;
-
-        var { cycle, lno, seqno } = parse(context, line);
-        if (cycle && isCycleCompleted(cycle)) {
-            handleCycle(cycle, csvStream);
-            cycle = null;
-        }
-        context = { cycle, lno, seqno };
     });
-
-    rl.on('close', onEnd);
 }
 
 /*===========================================================================*/
