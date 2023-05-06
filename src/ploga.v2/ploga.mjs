@@ -338,32 +338,6 @@ function parse(context, line)
     return { cycle, lno, seqno };
 }
 
-function statCycle(cycle, csvStream)
-{
-    console.log(cycleTitle(cycle));
-
-    const err = checkCycleHealthy(cycle);
-    if (err != 'ok') {
-        console.log(`cycle ${cycle.seqno} from line`
-            + ` ${cycle.lnoStart} to ${cycle.lnoEnd} has an error: ${err}`);
-        return;
-    }
-
-    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd},${cycle.coldStart}`);
-
-    const metrics = [];
-    for (const metric of metricCalculators) {
-        metrics.push({
-            name: metric.name,
-            value: metric.calculator(cycle),
-        });
-    }
-
-    for (const m of metrics)
-        csvStream.write(`,${m.value}`);
-    csvStream.write('\n');
-}
-
 function isCycleCompleted(cycle)
 {
     return ! isNaN(cycle.lnoStart) && ! isNaN(cycle.lnoEnd);
@@ -424,6 +398,184 @@ function checkCycleHealthy(cycle)
     return 'ok';
 }
 
+/*===========================================================================*/
+
+function statCycle(cycle, csvStream)
+{
+    console.log(cycleTitle(cycle));
+
+    const err = checkCycleHealthy(cycle);
+    if (err != 'ok') {
+        console.log(`cycle ${cycle.seqno} from line`
+            + ` ${cycle.lnoStart} to ${cycle.lnoEnd} has an error: ${err}`);
+        return;
+    }
+
+    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd},${cycle.coldStart}`);
+
+    const metrics = [];
+    for (const metric of metricCalculators) {
+        metrics.push({
+            name: metric.name,
+            value: metric.calculator(cycle),
+        });
+    }
+
+    for (const m of metrics)
+        csvStream.write(`,${m.value}`);
+    csvStream.write('\n');
+}
+
+function ioCycle(cycle, ioNames)
+{
+    const err = checkCycleHealthy(cycle);
+    if (err != 'ok') {
+        console.log(`cycle ${cycle.seqno} from line`
+            + ` ${cycle.lnoStart} to ${cycle.lnoEnd} has an error: ${err}`);
+        return;
+    }
+
+    const namedIOs = {
+        scs_l1_on: {
+            port: 0x0a00,
+            pin: 0,
+        },
+        scs_l1_off: {
+            port: 0x0e00,
+            pin: 7,
+        },
+        scs_l2_on: {
+            port: 0x0e00,
+            pin: 6,
+        },
+        scs_l2_off: {
+            port: 0x0e00,
+            pin: 5,
+        },
+        scs_l3_on: {
+            port: 0x0e00,
+            pin: 4,
+        },
+        scs_l3_off: {
+            port: 0x0e00,
+            pin: 3,
+        },
+        lc_3ph_on: {
+            port: 0x0a00,
+            pin: 1,
+        },
+        lc_3ph_off: {
+            port: 0x0a00,
+            pin: 3,
+        },
+    };
+
+    const printIoStateChange = (name, time, state, lno, lastPrintTime) => {
+        console.log(lno.toString().padStart(4, ' ')
+            , time.toString().padStart(10, ' ')
+            , (tickDiff(lastPrintTime, time) / 1000).toFixed(3).padStart(8, ' ')
+            , name.padStart(15, ' ')
+            , state);
+        return time;
+    };
+
+    const printPowerStateInfo = (log, lno, lastPrintTime) => {
+        const { tick, message } = log;
+        const m = message.match(/PSCm send event (Power[a-zA-Z0-9]+)/); 
+        if (! m) return lastPrintTime;
+        console.log(lno.toString().padStart(4, ' ')
+            , tick.toString().padStart(10, ' ')
+            , (tickDiff(lastPrintTime, tick) / 1000).toFixed(3).padStart(8, ' ')
+            , ' '.repeat(15)
+            , m[1]);
+        return tick;
+    };
+
+    const printPowersaveInfo = (log, lno, lastPrintTime) => {
+        const { tick, message } = log;
+        const m = message.match(/(power .* external devices)/); 
+        if (! m) return lastPrintTime;
+        console.log(lno.toString().padStart(4, ' ')
+            , tick.toString().padStart(10, ' ')
+            , (tickDiff(lastPrintTime, tick) / 1000).toFixed(3).padStart(8, ' ')
+            , ' '.repeat(15)
+            , m[1]);
+        return tick;
+    };
+
+    const printShutdownInfo = (log, lno, lastPrintTime) => {
+        const { tick, message } = log;
+        const n = message.search('start shutdown');
+        if (n < 0) return lastPrintTime;
+        console.log(lno.toString().padStart(4, ' ')
+            , tick.toString().padStart(10, ' ')
+            , (tickDiff(lastPrintTime, tick) / 1000).toFixed(3).padStart(8, ' ')
+            , ' '.repeat(15)
+            , message.slice(n));
+        return tick;
+    };
+
+    /* From a list of IO names, create a list of IO state objects.
+     */
+    const ios = (function initializeIoStates(ioNames) {
+        const ios = [];
+        for (const io of ioNames) {
+            if (! namedIOs[io]) throw new Error('unknown IO ' + io);
+            ios.push({
+                name: io,
+                port: namedIOs[io].port,
+                pin: namedIOs[io].pin,
+                state: -1,
+                tick: null,
+            });
+        }
+        return ios;
+    })(ioNames);
+
+    /* From an existing IO object and a log line, created an updated (or the
+     * same) IO object using the log information.
+     */
+    const updateIo = (io, log) => {
+        const { tick, message } = log;
+        const m = message.match(/gpio port (0x[0-9a-f]+) pin ([0-7]+) state ([0-1]+)/);
+        if (! m) return io;
+        if (parseInt(m[1]) != io.port || parseInt(m[2]) != io.pin) return io;
+        const s = parseInt(m[3]);
+        if (s == io.state) return io;
+        return Object.assign({}, io, { state: s, tick });
+    };
+
+    var lno = 0;
+    var lastPrintTime = 0;
+    console.log(`-- cycle ${cycle.seqno} lno ${cycle.lnoStart} to ${cycle.lnoEnd}:`);
+    for (const log of cycle.logs) {
+        const { tick, message } = log;
+        ++lno;
+
+        lastPrintTime = printPowerStateInfo(log, lno, lastPrintTime);
+        lastPrintTime = printPowersaveInfo(log, lno, lastPrintTime);
+        lastPrintTime = printShutdownInfo(log, lno, lastPrintTime);
+
+        const m = message.match(/gpio port (0x[0-9a-f]+) pin ([0-7]+) state ([0-1]+)/);
+        if (! m) continue;
+
+        for (var i = 0; i < ios.length; ++i) {
+            const io = ios[i];
+            const updated = updateIo(io, log);
+            if (updated.state != io.state) {
+                lastPrintTime = printIoStateChange(io.name
+                    , io.tick === null ? 0 : updated.tick
+                    , updated.state
+                    , lno
+                    , lastPrintTime
+                );
+            }
+            ios[i] = updated;
+        }
+    }
+    console.log();
+}
+
 function parseCycles(argv, onCycle, onEnd)
 {
     const rl = readline.createInterface({
@@ -477,6 +629,15 @@ function stat(argv)
     });
 }
 
+function iotrace(argv)
+{
+    parseCycles(argv, cycle => {
+        if (argv.cycle === undefined || cycle.seqno == argv.cycle)
+            ioCycle(cycle, argv.name.split(','));
+    }, async () => {
+    });
+}
+
 /*===========================================================================*/
 
 const argv = yargs(process.argv.slice(2))
@@ -501,26 +662,43 @@ const argv = yargs(process.argv.slice(2))
        }
     )
     .command('stat', 'statistics', yargs => {
-            yargs.option('data-name', {
-                alias: 'd',
-                describe: 'dataset name used to create csv and plot files',
-                nargs: 1,
-                type: 'string',
-                default: 'stat',
-            });
-            yargs.option('ignore', {
-                alias: 'i',
-                describe: 'ignore specified power cycle',
-                nargs: 1,
-                type: 'number',
-            });
-            yargs.option('plot', {
-                alias: 'P',
-                describe: 'to plot',
-                type: 'boolean',
-                default: true,
-            });
+        yargs.option('data-name', {
+            alias: 'd',
+            describe: 'dataset name used to create csv and plot files',
+            nargs: 1,
+            type: 'string',
+            default: 'stat',
+        });
+        yargs.option('ignore', {
+            alias: 'i',
+            describe: 'ignore specified power cycle',
+            nargs: 1,
+            type: 'number',
+        });
+        yargs.option('plot', {
+            alias: 'P',
+            describe: 'to plot',
+            type: 'boolean',
+            default: true,
+        });
         },
         stat,
+    )
+    .command('iotrace', 'trace IO status', yargs => {
+        yargs.option('name', {
+            alias: 'n',
+            describe: 'name of IOs (separated by common)',
+            nargs: 1,
+            type: 'string',
+            demandOption: true,
+        });
+        yargs.option('cycle', {
+            alias: 'c',
+            describe: 'seqno of cycle',
+            nargs: 1,
+            type: 'number',
+        });
+        },
+        iotrace,
     )
     .argv;
