@@ -378,16 +378,37 @@ function checkCycleHealthy(cycle)
 
         return { reason: shutdownReason, success: false };
     };
+    const checkBadMessages = () => {
+        const badMessages = [
+            'watchdog reset detected',
+            'invalid powerdown detected',
+        ];
+        for (const log of cycle.logs) {
+            for (const bad of badMessages)
+                if (log.message.search(bad) >= 0)
+                    return bad;
+        }
+        return null;
+    };
+    const checkPowerUpDownExtDevices = () => {
+        var state = 0;
+        for (const log of cycle.logs) {
+            const m = log.message.match(/power ([a-z]+) external devices/);
+            if (! m) continue;
+            if (m[1] == 'up') ++state;
+            if (m[1] == 'down') --state;
+            if (state > 1 || state < 0)
+                return state;
+        }
+        return state;
+    };
 
-    const badMessages = [
-        'watchdog reset detected',
-        'invalid powerdown detected',
-    ];
-    for (const log of cycle.logs) {
-        for (const bad of badMessages)
-            if (log.message.search(bad) >= 0)
-                return bad;
-    }
+    const bad = checkBadMessages();
+    if (bad) return bad;
+
+    const extDevicesState = checkPowerUpDownExtDevices();
+    if (extDevicesState != 0)
+        return `external devices is not correctly power-up or power-down: state %{extDevicesState}`;
 
     if (analysisShutdownType(cycle) == 'No Backup')
         return 'ok';
@@ -515,6 +536,51 @@ function ioCycle(cycle, ioNames)
         return tick;
     };
 
+    const printRemoteIoCall = (log, lno, lastPrintTime) => {
+        const remoteIoMapping = [
+            'pulse_output_1',
+            'pulse_output_2',
+            'scs_l1_off',
+            'scs_l1_on',
+            'scs_l2_off',
+            'scs_l2_on',
+            'scs_l3_off',
+            'scs_l3_on',
+            'scs_l1_status',
+            'scs_l2_status',
+            'scs_l3_status',
+            'p1_enalbe',
+            'p1_rq',
+            'modem_power_on',
+            'modem_reset',
+            'modem_pwr_mon',
+            'modem_cts',
+            'modem_dtr',
+            'modem_dcd',
+            'lc_1ph_on',
+            'lc_1ph_off',
+            'lc_3ph_on',
+            'lc_3ph_off',
+            'pulse_out',
+            'wan_pf',
+            'fast_shutdown',
+            'wan_sr',
+        ];
+
+        const { tick, message } = log;
+        const m = message.match(/remote io (.*) (set[a-zA-Z]+)/); 
+        if (! m) return lastPrintTime;
+
+        const ioName = remoteIoMapping[parseInt(m[1])];
+        if (ioName == undefined) throw new Error('unknown remote io id:', m[1]);
+        console.log(lno.toString().padStart(4, ' ')
+            , tick.toString().padStart(10, ' ')
+            , (tickDiff(lastPrintTime, tick) / 1000).toFixed(3).padStart(8, ' ')
+            , ' '.repeat(15)
+            , `remote ${ioName} ${m[2]}`);
+        return tick;
+    };
+
     /* From a list of IO names, create a list of IO state objects.
      */
     const ios = (function initializeIoStates(ioNames) {
@@ -555,6 +621,7 @@ function ioCycle(cycle, ioNames)
         lastPrintTime = printPowerStateInfo(log, lno, lastPrintTime);
         lastPrintTime = printPowersaveInfo(log, lno, lastPrintTime);
         lastPrintTime = printShutdownInfo(log, lno, lastPrintTime);
+        lastPrintTime = printRemoteIoCall(log, lno, lastPrintTime);
 
         const m = message.match(/gpio port (0x[0-9a-f]+) pin ([0-7]+) state ([0-1]+)/);
         if (! m) continue;
