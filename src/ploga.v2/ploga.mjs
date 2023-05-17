@@ -290,7 +290,7 @@ function detectCycleBoundary(message)
             state: 'cycle-start',
             coldStart: +m[1] == 1,
         };
-    if (message.search('shutdown took') >= 0
+    if (message.search('dprintf buf used') >= 0
         || message.search('enter psm wait-for-reset') >= 0)
         return {
             state: 'cycle-end',
@@ -402,9 +402,20 @@ function checkCycleHealthy(cycle)
         }
         return state;
     };
+    const checkLogIntegrity = () => {
+        for (const log of cycle.logs) {
+            if (log.message.search(/bad format/) >= 0)
+                return 'log message damanged';
+        }
+    };
 
-    const bad = checkBadMessages();
-    if (bad) return bad;
+    var err;
+
+    err = checkLogIntegrity();
+    if (err) return err;
+
+    err = checkBadMessages();
+    if (err) return err;
 
     const extDevicesState = checkPowerUpDownExtDevices();
     if (extDevicesState != 0)
@@ -432,16 +443,25 @@ function statCycle(cycle, csvStream)
         return;
     }
 
-    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd},${cycle.coldStart}`);
-
+    var error = false;
     const metrics = [];
-    for (const metric of metricCalculators) {
-        metrics.push({
-            name: metric.name,
-            value: metric.calculator(cycle),
-        });
+    try {
+        for (const metric of metricCalculators) {
+            metrics.push({
+                name: metric.name,
+                value: metric.calculator(cycle),
+            });
+        }
+    } catch (e) {
+        console.error(e.message);
+        error = true;
     }
 
+    if (error) {
+        console.log(`cycle ${cycle} skipped`);
+        return;
+    }
+    csvStream.write(`${cycle.seqno},${cycle.lnoStart},${cycle.lnoEnd},${cycle.coldStart}`);
     for (const m of metrics)
         csvStream.write(`,${m.value}`);
     csvStream.write('\n');
