@@ -467,7 +467,7 @@ function statCycle(cycle, csvStream)
     csvStream.write('\n');
 }
 
-function ioCycle(cycle, ioNames)
+function ioCycle(cycle)
 {
     const err = checkCycleHealthy(cycle);
     if (err != 'ok') {
@@ -476,42 +476,19 @@ function ioCycle(cycle, ioNames)
         return;
     }
 
-    const namedIOs = {
-        scs_l1_on: {
-            port: 0x0a00,
-            pin: 0,
-        },
-        scs_l1_off: {
-            port: 0x0e00,
-            pin: 7,
-        },
-        scs_l2_on: {
-            port: 0x0e00,
-            pin: 6,
-        },
-        scs_l2_off: {
-            port: 0x0e00,
-            pin: 5,
-        },
-        scs_l3_on: {
-            port: 0x0e00,
-            pin: 4,
-        },
-        scs_l3_off: {
-            port: 0x0e00,
-            pin: 3,
-        },
-        lc_3ph_on: {
-            port: 0x0a00,
-            pin: 1,
-        },
-        lc_3ph_off: {
-            port: 0x0a00,
-            pin: 3,
-        },
-    };
-
     const printIoStateChange = (name, time, state, lno, lastPrintTime) => {
+        const ioNameTrans = {
+            '0a00': 'scs_l1_on',
+            '0e07': 'scs_l1_off',
+            '0e06': 'scs_l2_on',
+            '0e05': 'scs_l2_off',
+            '0e04': 'scs_l3_on',
+            '0e03': 'scs_l3_off',
+            '0a01': 'lc_3ph_on',
+            '0a03': 'lc_3ph_off',
+        };
+
+        if (ioNameTrans[name] != undefined) name = ioNameTrans[name];
         console.log(lno.toString().padStart(4, ' ')
             , time.toString().padStart(10, ' ')
             , (tickDiff(lastPrintTime, time) / 1000).toFixed(3).padStart(8, ' ')
@@ -556,83 +533,9 @@ function ioCycle(cycle, ioNames)
         return tick;
     };
 
-    const printRemoteIoCall = (log, lno, lastPrintTime) => {
-        const remoteIoMapping = [
-            'pulse_output_1',
-            'pulse_output_2',
-            'scs_l1_off',
-            'scs_l1_on',
-            'scs_l2_off',
-            'scs_l2_on',
-            'scs_l3_off',
-            'scs_l3_on',
-            'scs_l1_status',
-            'scs_l2_status',
-            'scs_l3_status',
-            'p1_enalbe',
-            'p1_rq',
-            'modem_power_on',
-            'modem_reset',
-            'modem_pwr_mon',
-            'modem_cts',
-            'modem_dtr',
-            'modem_dcd',
-            'lc_1ph_on',
-            'lc_1ph_off',
-            'lc_3ph_on',
-            'lc_3ph_off',
-            'pulse_out',
-            'wan_pf',
-            'fast_shutdown',
-            'wan_sr',
-        ];
-
-        const { tick, message } = log;
-        const m = message.match(/remote io (.*) (set[a-zA-Z]+)/); 
-        if (! m) return lastPrintTime;
-
-        const ioName = remoteIoMapping[parseInt(m[1])];
-        if (ioName == undefined) throw new Error('unknown remote io id:', m[1]);
-        console.log(lno.toString().padStart(4, ' ')
-            , tick.toString().padStart(10, ' ')
-            , (tickDiff(lastPrintTime, tick) / 1000).toFixed(3).padStart(8, ' ')
-            , ' '.repeat(15)
-            , `remote ${ioName} ${m[2]}`);
-        return tick;
-    };
-
-    /* From a list of IO names, create a list of IO state objects.
-     */
-    const ios = (function initializeIoStates(ioNames) {
-        const ios = [];
-        for (const io of ioNames) {
-            if (! namedIOs[io]) throw new Error('unknown IO ' + io);
-            ios.push({
-                name: io,
-                port: namedIOs[io].port,
-                pin: namedIOs[io].pin,
-                state: -1,
-                tick: null,
-            });
-        }
-        return ios;
-    })(ioNames);
-
-    /* From an existing IO object and a log line, created an updated (or the
-     * same) IO object using the log information.
-     */
-    const updateIo = (io, log) => {
-        const { tick, message } = log;
-        const m = message.match(/gpio port (0x[0-9a-f]+) pin ([0-7]+) state ([0-1]+)/);
-        if (! m) return io;
-        if (parseInt(m[1]) != io.port || parseInt(m[2]) != io.pin) return io;
-        const s = parseInt(m[3]);
-        if (s == io.state) return io;
-        return Object.assign({}, io, { state: s, tick });
-    };
-
     var lno = 0;
     var lastPrintTime = 0;
+    const ioStatePool = {};
     console.log(`-- cycle ${cycle.seqno} lno ${cycle.lnoStart} to ${cycle.lnoEnd}:`);
     for (const log of cycle.logs) {
         const { tick, message } = log;
@@ -641,23 +544,22 @@ function ioCycle(cycle, ioNames)
         lastPrintTime = printPowerStateInfo(log, lno, lastPrintTime);
         lastPrintTime = printPowersaveInfo(log, lno, lastPrintTime);
         lastPrintTime = printShutdownInfo(log, lno, lastPrintTime);
-        lastPrintTime = printRemoteIoCall(log, lno, lastPrintTime);
 
-        const m = message.match(/gpio port (0x[0-9a-f]+) pin ([0-7]+) state ([0-1]+)/);
+        const m = message.match(/gpio ([0-9a-f]+) state ([0-1]+)/);
         if (! m) continue;
 
-        for (var i = 0; i < ios.length; ++i) {
-            const io = ios[i];
-            const updated = updateIo(io, log);
-            if (updated.state != io.state) {
-                lastPrintTime = printIoStateChange(io.name
-                    , io.tick === null ? 0 : updated.tick
-                    , updated.state
-                    , lno
-                    , lastPrintTime
-                );
-            }
-            ios[i] = updated;
+        const ioName = m[1];
+        const ioState = +m[2];
+        if (ioStatePool[ioName] == undefined)
+            ioStatePool[ioName] = -1;
+        if (ioStatePool[ioName] != ioState) {
+            ioStatePool[ioName] = ioState;
+            lastPrintTime = printIoStateChange(ioName
+                , tick
+                , ioState
+                , lno
+                , lastPrintTime
+            );
         }
     }
     console.log();
@@ -720,7 +622,7 @@ function iotrace(argv)
 {
     parseCycles(argv, cycle => {
         if (argv.cycle === undefined || cycle.seqno == argv.cycle)
-            ioCycle(cycle, argv.name.split(','));
+            ioCycle(cycle);
     }, async () => {
     });
 }
@@ -772,13 +674,6 @@ const argv = yargs(process.argv.slice(2))
         stat,
     )
     .command('iotrace', 'trace IO status', yargs => {
-        yargs.option('name', {
-            alias: 'n',
-            describe: 'name of IOs (separated by common)',
-            nargs: 1,
-            type: 'string',
-            demandOption: true,
-        });
         yargs.option('cycle', {
             alias: 'c',
             describe: 'seqno of cycle',
