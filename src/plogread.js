@@ -150,7 +150,7 @@ const logFormat = logform.format((() => {
             /* j points to the first char of the task name */
 
             const task = message.slice(j, p + 1);
-            var msg = message.slice(pos + 1).trim();
+            var msg = message.slice(pos + 1).trimRight();
 
             /* When a log message contains symbols definition, I should only
              * extract the definitions without doing the symbol value
@@ -233,7 +233,7 @@ const logFormat = logform.format((() => {
         };
 
         try {
-            info.message = info.message.trim();
+            info.message = info.message.trimRight();
             if (! info.message) {
                 info[MESSAGE] = '';
                 return;
