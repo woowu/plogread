@@ -55,7 +55,6 @@ const argv = yargs(hideBin(process.argv))
         alias: 'a',
         describe: 'append to log files',
         type: 'boolean',
-        default: true,
     })
     .help()
     .alias('help', 'h')
@@ -223,7 +222,7 @@ const logFormat = logform.format((() => {
                 , typeof m.facility == 'number'
                 ? facilityNumWidth : facilityNameWidth);
 
-            m.systime = st(moment().format('YYYY-MM-DDTHH:mm:ss.SSS'));
+            m.systime = st(moment().format('HH:mm:ss.SSS'));
             m.timestamp = ts(m.timestamp);
             m.mod = md(m.mod);
             m.task = t(m.task);
